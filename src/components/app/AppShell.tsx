@@ -793,22 +793,43 @@ export function AppShell({
                 onOpenProfile={(id) => void openProfile(id)}
               />
               {onSearchChange && searchQuery !== undefined && (
-                <div className="flex items-center gap-2 border-t border-border bg-chat px-4 py-1.5">
-                  <input
-                    value={searchQuery}
-                    onChange={(e) => onSearchChange(e.target.value)}
-                    placeholder="Search messages in channel…"
-                    className="min-w-0 flex-1 rounded-md border border-border bg-bg-elevated px-2 py-1 text-xs text-text outline-none"
-                  />
-                  {searchQuery && (
+                <div className="flex items-center gap-2 border-t border-border bg-chat px-4 py-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl bg-bg-elevated px-3 py-2 ring-1 ring-border focus-within:ring-border-strong">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-3.5 w-3.5 shrink-0 text-text-muted"
+                      fill="none"
+                      aria-hidden
+                    >
+                      <circle
+                        cx="11"
+                        cy="11"
+                        r="6"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                      <path
+                        d="m16 16 3 3"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <input
+                      value={searchQuery.trim() === "" ? "" : searchQuery}
+                      onChange={(e) => onSearchChange(e.target.value || " ")}
+                      placeholder="Search messages in channel…"
+                      className="min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
+                      autoFocus
+                    />
                     <button
                       type="button"
-                      className="text-[11px] text-text-muted hover:text-text"
+                      className="rounded-md px-2 py-0.5 text-[11px] text-text-muted transition hover:bg-bg-hover hover:text-text"
                       onClick={() => onSearchChange("")}
                     >
-                      Clear
+                      Close
                     </button>
-                  )}
+                  </div>
                 </div>
               )}
               <MessageComposer
@@ -818,6 +839,8 @@ export function AppShell({
                 onCancelReply={onCancelReply}
                 onSend={onSend}
                 onTyping={onTyping}
+                searchActive={Boolean(searchQuery)}
+                pinsActive={pinsOnly}
                 onToggleSearch={() =>
                   onSearchChange?.(searchQuery ? "" : " ")
                 }

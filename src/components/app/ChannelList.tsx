@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Channel, Server } from "@/lib/types";
 import type { PresenceUser } from "@/hooks/useServerPresence";
 import type { NotificationLevel } from "@/lib/permissions";
@@ -129,13 +129,13 @@ export function ChannelList({
           type="button"
           onClick={() => setServerMenuOpen((o) => !o)}
           className={cn(
-            "flex h-12 w-full items-center gap-2 px-4 text-left transition-colors hover:bg-bg-hover",
+            "flex h-12 w-full items-center gap-2 px-3.5 text-left shadow-sm transition-colors hover:bg-bg-hover",
             serverMenuOpen && "bg-bg-hover",
           )}
           aria-expanded={serverMenuOpen}
           aria-haspopup="menu"
         >
-          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-text">
+          <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight text-text">
             {server.name}
           </h2>
           <ChevronIcon
@@ -149,52 +149,60 @@ export function ChannelList({
         {serverMenuOpen && (
           <div
             role="menu"
-            className="hango-anim-pop absolute left-2 right-2 top-[calc(100%-4px)] z-50 overflow-hidden rounded-lg border border-border bg-bg-elevated py-1.5 shadow-xl"
+            className="hango-anim-pop absolute left-2 right-2 top-[calc(100%-2px)] z-50 overflow-hidden rounded-xl border border-border-strong bg-[#111] py-2 shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
           >
             {onOpenSearch && (
               <MenuItem
+                icon={<IconSearchSm />}
                 label="Search"
                 onClick={() => runAndClose(onOpenSearch)}
               />
             )}
             {onMarkRead && (
               <MenuItem
+                icon={<IconCheck />}
                 label="Mark as read"
                 onClick={() => runAndClose(onMarkRead)}
               />
             )}
             {onEditTopic && (
               <MenuItem
+                icon={<IconEdit />}
                 label="Edit topic"
                 onClick={() => runAndClose(onEditTopic)}
               />
             )}
             {onOpenThreads && (
               <MenuItem
+                icon={<IconThread />}
                 label="Threads"
                 onClick={() => runAndClose(onOpenThreads)}
               />
             )}
             {onOpenEmoji && (
               <MenuItem
+                icon={<IconEmoji />}
                 label="Server emoji"
                 onClick={() => runAndClose(onOpenEmoji)}
               />
             )}
             {onOpenRoles && (
               <MenuItem
+                icon={<IconShield />}
                 label="Roles"
                 onClick={() => runAndClose(onOpenRoles)}
               />
             )}
             {onOpenInvite && (
               <MenuItem
+                icon={<IconInvite />}
                 label="Invite settings"
                 onClick={() => runAndClose(onOpenInvite)}
               />
             )}
             {server.invite_code && (
               <MenuItem
+                icon={<IconCopy />}
                 label={copied ? "Invite copied" : "Copy invite"}
                 onClick={() => {
                   void copyInvite();
@@ -204,8 +212,8 @@ export function ChannelList({
             )}
             {(onSetServerNotif || onMuteServer) && (
               <>
-                <div className="my-1 border-t border-border" />
-                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                <div className="mx-2 my-2 border-t border-border" />
+                <p className="px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
                   Notifications
                 </p>
                 {(
@@ -214,26 +222,38 @@ export function ChannelList({
                     ["mentions", "Mentions only"],
                     ["nothing", "Nothing"],
                   ] as const
-                ).map(([level, label]) => (
-                  <MenuItem
-                    key={level}
-                    label={`${serverNotifLevel === level || (level === "nothing" && serverMuted && !onSetServerNotif) ? "✓ " : ""}${label}`}
-                    onClick={() => {
-                      setServerMenuOpen(false);
-                      if (onSetServerNotif) onSetServerNotif(level);
-                      else if (onMuteServer) onMuteServer(level === "nothing");
-                    }}
-                  />
-                ))}
+                ).map(([level, label]) => {
+                  const active =
+                    serverNotifLevel === level ||
+                    (level === "nothing" &&
+                      serverMuted &&
+                      !onSetServerNotif);
+                  return (
+                    <MenuItem
+                      key={level}
+                      label={label}
+                      active={active}
+                      onClick={() => {
+                        setServerMenuOpen(false);
+                        if (onSetServerNotif) onSetServerNotif(level);
+                        else if (onMuteServer)
+                          onMuteServer(level === "nothing");
+                      }}
+                    />
+                  );
+                })}
               </>
             )}
-            <div className="my-1 border-t border-border" />
+            <div className="mx-2 my-2 border-t border-border" />
             <Link
               href={homeHref}
               role="menuitem"
-              className="block w-full px-3 py-1.5 text-left text-xs text-rose-400 hover:bg-bg-hover"
+              className="mx-1 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-rose-400 transition hover:bg-rose-500/10"
               onClick={() => setServerMenuOpen(false)}
             >
+              <span className="flex h-4 w-4 items-center justify-center text-xs">
+                ←
+              </span>
               Leave server
             </Link>
           </div>
@@ -427,18 +447,34 @@ export function ChannelList({
 function MenuItem({
   label,
   onClick,
+  icon,
+  active,
 }: {
   label: string;
   onClick: () => void;
+  icon?: React.ReactNode;
+  active?: boolean;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="block w-full px-3 py-1.5 text-left text-xs text-text-secondary hover:bg-bg-hover hover:text-text"
+      className={cn(
+        "mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-text-secondary transition hover:bg-bg-hover hover:text-text",
+        active && "bg-bg-hover text-text",
+      )}
     >
-      {label}
+      {icon ? (
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-text-muted">
+          {icon}
+        </span>
+      ) : (
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[11px] text-emerald-400">
+          {active ? "✓" : ""}
+        </span>
+      )}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
   );
 }
@@ -454,6 +490,78 @@ function ChevronIcon({ className }: { className?: string }) {
       aria-hidden
     >
       <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function IconSearchSm() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden>
+      <circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="2" />
+      <path d="m16 16 3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCheck() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden>
+      <path d="m5 12 5 5L20 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconEdit() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden>
+      <path d="M4 20h4L18 10l-4-4L4 16v4Z" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" />
+      <path d="m12 6 4 4" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  );
+}
+
+function IconThread() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden>
+      <path d="M7 7h10M7 12h10M7 17h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconEmoji() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.75" />
+      <circle cx="9" cy="10" r="1" fill="currentColor" />
+      <circle cx="15" cy="10" r="1" fill="currentColor" />
+      <path d="M8.5 14.5c1 1.5 2.5 2 3.5 2s2.5-.5 3.5-2" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconShield() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden>
+      <path d="M12 3 5 6v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3Z" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconInvite() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden>
+      <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="1.75" />
+      <path d="M3.5 18c.8-2.5 2.8-4 5.5-4s4.7 1.5 5.5 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+      <path d="M17 8v6M14 11h6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCopy() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden>
+      <rect x="8" y="8" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.75" />
+      <path d="M6 16V6a2 2 0 0 1 2-2h10" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
     </svg>
   );
 }
