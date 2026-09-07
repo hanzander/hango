@@ -30,7 +30,7 @@ import type { ServerRole } from "@/lib/types";
 import { useServerPresence } from "@/hooks/useServerPresence";
 import { createClient } from "@/lib/supabase/client";
 import { playJoinSound, playLeaveSound, unlockAudio } from "@/lib/call-sounds";
-import { ensureMicAccess, refreshMediaDevices } from "@/lib/media-devices";
+import { refreshMediaDevices } from "@/lib/media-devices";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
 
@@ -365,12 +365,11 @@ export function AppShell({
     if ((channel.kind ?? "text") !== "voice") return;
     unlockAudio();
     playJoinSound();
-    void ensureMicAccess().then((result) => {
-      if (result.ok) {
-        void refreshMediaDevices("audiooutput");
-        void refreshMediaDevices("videoinput");
-      }
-    });
+    // Don't call ensureMicAccess here — it races CallOverlay (opens mic,
+    // stops tracks, then LiveKit fails and shows "Allow microphone" every join).
+    // Mic is enabled inside CallOverlay after the room connects.
+    void refreshMediaDevices("audioinput");
+    void refreshMediaDevices("audiooutput");
     setCallConnected(false);
     setVoiceSession({ channelId: channel.id, channelName: channel.name });
   }, [channel.id, channel.kind, channel.name]);

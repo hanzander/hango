@@ -103,6 +103,29 @@ async function enableMicrophone(room: Room, deviceId?: string) {
   throw lastErr;
 }
 
+async function enableMicrophoneWithRetry(
+  room: Room,
+  deviceId?: string,
+  tries = 3,
+) {
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
+    if (room.state !== ConnectionState.Connected) {
+      throw lastErr ?? new Error("Room not connected");
+    }
+    try {
+      await enableMicrophone(room, deviceId);
+      return;
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 180 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
+const CONNECTING_HINT = "Still connecting — try again in a moment.";
+
 function localPlaceholder(displayName: string): PeerSnapshot {
   return {
     identity: "__local__",
@@ -348,6 +371,7 @@ export function CallOverlay({
         if (state === ConnectionState.Connected) {
           setStatus("live");
           setConnLabel("Voice Connected");
+          setDeviceHint((prev) => (prev === CONNECTING_HINT ? null : prev));
           onConnectedRef.current?.();
           schedulePeers();
           knownRemotes.current = new Set(room.remoteParticipants.keys());
@@ -400,20 +424,35 @@ export function CallOverlay({
         if (cancelled) return;
 
         try {
-          await enableMicrophone(room);
+          await enableMicrophoneWithRetry(room);
           setMicOn(true);
+          setNeedsMicAllow(false);
+          setDeviceHint(null);
+          setMicHelpSteps([]);
           void warmDeviceCache();
         } catch (micErr) {
-          setDeviceHint(friendlyDeviceError(micErr, "microphone"));
-          setMicOn(false);
-          setNeedsMicAllow(true);
-          setMicHelpSteps([
-            "Click Allow microphone below (or in the mic menu)",
-            "If a popup appears, choose Allow",
-            "If it says blocked: address bar lock → Microphone → Allow, then reload",
-            "Windows: Settings → Privacy → Microphone must be on for your browser",
-          ]);
-          void warmDeviceCache();
+          // Permission already granted but device briefly busy → one more soft retry
+          try {
+            await new Promise((r) => setTimeout(r, 350));
+            if (cancelled) return;
+            await enableMicrophoneWithRetry(room, undefined, 2);
+            setMicOn(true);
+            setNeedsMicAllow(false);
+            setDeviceHint(null);
+            setMicHelpSteps([]);
+            void warmDeviceCache();
+          } catch {
+            setDeviceHint(friendlyDeviceError(micErr, "microphone"));
+            setMicOn(false);
+            setNeedsMicAllow(true);
+            setMicHelpSteps([
+              "Click Allow microphone below (or in the mic menu)",
+              "If a popup appears, choose Allow",
+              "If it says blocked: address bar lock → Microphone → Allow, then reload",
+              "Windows: Settings → Privacy → Microphone must be on for your browser",
+            ]);
+            void warmDeviceCache();
+          }
         }
         schedulePeers();
       } catch (err) {
@@ -502,7 +541,10 @@ export function CallOverlay({
     if (mediaBusyRef.current) return;
     const r = roomRef.current;
     if (!r || r.state !== ConnectionState.Connected) {
-      setDeviceHint("Still connecting — try again in a moment.");
+      setDeviceHint(CONNECTING_HINT);
+      window.setTimeout(() => {
+        setDeviceHint((prev) => (prev === CONNECTING_HINT ? null : prev));
+      }, 2200);
       return;
     }
     mediaBusyRef.current = true;
@@ -525,7 +567,7 @@ export function CallOverlay({
       try {
         if (next) {
           const preferred = r.getActiveDevice("audioinput") || undefined;
-          await enableMicrophone(r, preferred);
+          await enableMicrophoneWithRetry(r, preferred);
           setNeedsMicAllow(false);
           playUnmuteSound();
           void warmDeviceCache();
@@ -553,16 +595,29 @@ export function CallOverlay({
         setMicHelpSteps(access.steps);
         return;
       }
-      const r = roomRef.current;
+      // Wait briefly if the room is still connecting (common right after join)
+      let r = roomRef.current;
+      const deadline = Date.now() + 6000;
+      while (
+        (!r || r.state !== ConnectionState.Connected) &&
+        Date.now() < deadline
+      ) {
+        await new Promise((res) => setTimeout(res, 100));
+        r = roomRef.current;
+      }
       if (r && r.state === ConnectionState.Connected) {
         const preferred =
           access.deviceId || access.devices[0]?.deviceId || undefined;
-        await enableMicrophone(r, preferred);
+        await enableMicrophoneWithRetry(r, preferred);
         setMicOn(true);
         setNeedsMicAllow(false);
         setMicHelpSteps([]);
+        setDeviceHint(null);
         playUnmuteSound();
         schedulePeers();
+      } else {
+        setNeedsMicAllow(true);
+        setDeviceHint(CONNECTING_HINT);
       }
     } catch (err) {
       setNeedsMicAllow(true);
@@ -957,7 +1012,7 @@ export function CallOverlay({
         </div>
       )}
 
-      {(needsMicAllow || deviceHint) && (
+      {(needsMicAllow || (deviceHint && deviceHint !== CONNECTING_HINT)) && (
         <div className="relative z-10 mx-5 mb-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs text-amber-50">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1 space-y-2">
@@ -974,14 +1029,16 @@ export function CallOverlay({
               )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                disabled={micAllowBusy}
-                className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-medium text-black hover:bg-emerald-400 disabled:opacity-50"
-                onClick={() => void allowMicrophone()}
-              >
-                {micAllowBusy ? "Requesting…" : "Allow microphone"}
-              </button>
+              {needsMicAllow && (
+                <button
+                  type="button"
+                  disabled={micAllowBusy}
+                  className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-medium text-black hover:bg-emerald-400 disabled:opacity-50"
+                  onClick={() => void allowMicrophone()}
+                >
+                  {micAllowBusy ? "Requesting…" : "Allow microphone"}
+                </button>
+              )}
               {deviceHint && (
                 <button
                   type="button"
