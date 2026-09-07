@@ -3,37 +3,49 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { createClient } from "@/lib/supabase/client";
+import type { Profile, UserStatus } from "@/lib/types";
 
 type ProfileEditorProps = {
   open: boolean;
   onClose: () => void;
-  displayName: string;
-  avatarUrl?: string | null;
-  onSaved: (next: { displayName: string; avatarUrl: string | null }) => void;
+  profile: Profile;
+  onSaved: (next: Profile) => void;
 };
 
-/** Discord-like user settings: edit display name + avatar */
+const STATUSES: { id: UserStatus; label: string }[] = [
+  { id: "online", label: "Online" },
+  { id: "idle", label: "Idle" },
+  { id: "dnd", label: "Do Not Disturb" },
+  { id: "invisible", label: "Invisible" },
+];
+
+/** Discord-like user settings: profile + status */
 export function ProfileEditor({
   open,
   onClose,
-  displayName,
-  avatarUrl,
+  profile,
   onSaved,
 }: ProfileEditorProps) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [name, setName] = useState(displayName);
-  const [preview, setPreview] = useState<string | null>(avatarUrl ?? null);
+  const [name, setName] = useState(profile.display_name);
+  const [preview, setPreview] = useState<string | null>(profile.avatar_url);
   const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<UserStatus>(profile.status ?? "online");
+  const [customStatus, setCustomStatus] = useState(profile.custom_status ?? "");
+  const [bio, setBio] = useState(profile.bio ?? "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setName(displayName);
-    setPreview(avatarUrl ?? null);
+    setName(profile.display_name);
+    setPreview(profile.avatar_url);
     setFile(null);
+    setStatus(profile.status ?? "online");
+    setCustomStatus(profile.custom_status ?? "");
+    setBio(profile.bio ?? "");
     setError(null);
-  }, [open, displayName, avatarUrl]);
+  }, [open, profile]);
 
   useEffect(() => {
     if (!open) return;
@@ -49,7 +61,7 @@ export function ProfileEditor({
   function onPickFile(f: File | null) {
     setFile(f);
     if (preview?.startsWith("blob:")) URL.revokeObjectURL(preview);
-    setPreview(f ? URL.createObjectURL(f) : (avatarUrl ?? null));
+    setPreview(f ? URL.createObjectURL(f) : profile.avatar_url);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -63,7 +75,7 @@ export function ProfileEditor({
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
 
-      let nextAvatar = avatarUrl ?? null;
+      let nextAvatar = profile.avatar_url;
       if (file) {
         const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
         const path = `${user.id}/avatar.${ext}`;
@@ -75,17 +87,21 @@ export function ProfileEditor({
         nextAvatar = `${data.publicUrl}?t=${Date.now()}`;
       }
 
-      const trimmed = name.trim() || displayName;
+      const trimmed = name.trim() || profile.display_name;
+      const patch = {
+        display_name: trimmed,
+        avatar_url: nextAvatar,
+        status,
+        custom_status: customStatus.trim() || null,
+        bio: bio.trim() || null,
+      };
       const { error: updateError } = await supabase
         .from("profiles")
-        .update({
-          display_name: trimmed,
-          avatar_url: nextAvatar,
-        })
+        .update(patch)
         .eq("id", user.id);
       if (updateError) throw updateError;
 
-      onSaved({ displayName: trimmed, avatarUrl: nextAvatar });
+      onSaved({ ...profile, ...patch, id: user.id });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save profile");
@@ -102,7 +118,7 @@ export function ProfileEditor({
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-bg-elevated shadow-2xl">
+      <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-bg-elevated shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
             <h2 className="text-sm font-semibold text-text">User Settings</h2>
@@ -117,7 +133,7 @@ export function ProfileEditor({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5 px-5 py-5">
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5 px-5 py-5">
           <div className="flex items-center gap-4">
             <button
               type="button"
@@ -156,6 +172,48 @@ export function ProfileEditor({
               maxLength={32}
               className="w-full rounded-lg border border-border-strong bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-text-muted"
               required
+            />
+          </label>
+
+          <div className="space-y-1.5">
+            <span className="text-xs text-text-muted">Status</span>
+            <div className="grid grid-cols-2 gap-1.5">
+              {STATUSES.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setStatus(s.id)}
+                  className={
+                    status === s.id
+                      ? "rounded-lg bg-accent/20 px-2 py-2 text-xs font-medium text-accent"
+                      : "rounded-lg border border-border px-2 py-2 text-xs text-text-secondary hover:text-text"
+                  }
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs text-text-muted">Custom status</span>
+            <input
+              value={customStatus}
+              onChange={(e) => setCustomStatus(e.target.value)}
+              maxLength={80}
+              placeholder="What's up?"
+              className="w-full rounded-lg border border-border-strong bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-text-muted"
+            />
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs text-text-muted">About Me</span>
+            <textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              maxLength={190}
+              rows={3}
+              className="w-full resize-none rounded-lg border border-border-strong bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-text-muted"
             />
           </label>
 

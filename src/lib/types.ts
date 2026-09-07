@@ -4,6 +4,9 @@ export type Profile = {
   username?: string | null;
   avatar_url: string | null;
   onboarding_complete?: boolean;
+  status?: "online" | "idle" | "dnd" | "invisible";
+  custom_status?: string | null;
+  bio?: string | null;
   created_at?: string;
 };
 
@@ -22,6 +25,7 @@ export type Channel = {
   name: string;
   position: number;
   kind?: "text" | "voice";
+  topic?: string | null;
   created_at?: string;
 };
 
@@ -31,5 +35,19 @@ export type Message = {
   author_id: string;
   content: string;
   created_at: string;
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  reply_to_id?: string | null;
   author?: Profile | null;
+  reply_to?: Message | null;
+  reactions?: MessageReaction[];
 };
+
+export type MessageReaction = {
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at?: string;
+};
+
+export type UserStatus = NonNullable<Profile["status"]>;

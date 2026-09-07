@@ -6,13 +6,17 @@ import type { Profile } from "@/lib/types";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
 
-export type ServerMember = Pick<Profile, "id" | "display_name" | "avatar_url">;
+export type ServerMember = Pick<
+  Profile,
+  "id" | "display_name" | "avatar_url" | "status" | "custom_status" | "bio"
+>;
 
 type MembersPanelProps = {
   serverMembers: ServerMember[];
   online: PresenceUser[];
   /** LiveKit identities currently speaking */
   speakingIds?: string[];
+  onOpenProfile?: (userId: string) => void;
 };
 
 type Row = {
@@ -27,6 +31,7 @@ export function MembersPanel({
   serverMembers,
   online,
   speakingIds = [],
+  onOpenProfile,
 }: MembersPanelProps) {
   const speaking = useMemo(() => new Set(speakingIds), [speakingIds]);
 
@@ -86,6 +91,7 @@ export function MembersPanel({
                 key={m.user_id}
                 member={m}
                 speaking={speaking.has(m.user_id)}
+                onOpen={() => onOpenProfile?.(m.user_id)}
               />
             ))
           )}
@@ -96,7 +102,12 @@ export function MembersPanel({
             <li className="px-2 py-1 text-xs text-text-muted">None</li>
           ) : (
             offline.map((m) => (
-              <MemberRow key={m.user_id} member={m} speaking={false} />
+              <MemberRow
+                key={m.user_id}
+                member={m}
+                speaking={false}
+                onOpen={() => onOpenProfile?.(m.user_id)}
+              />
             ))
           )}
         </Section>
@@ -125,18 +136,23 @@ function Section({
 function MemberRow({
   member,
   speaking,
+  onOpen,
 }: {
   member: Row;
   speaking: boolean;
+  onOpen?: () => void;
 }) {
   const dim = member.status === "offline";
   return (
-    <li
-      className={cn(
-        "flex items-center gap-2 rounded-lg px-2 py-1.5",
-        dim && "opacity-50",
-      )}
-    >
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-bg-hover",
+          dim && "opacity-50",
+        )}
+      >
       <div className="relative shrink-0">
         <div
           className={cn(
@@ -167,6 +183,7 @@ function MemberRow({
           </p>
         )}
       </div>
+      </button>
     </li>
   );
 }

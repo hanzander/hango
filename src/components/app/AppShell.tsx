@@ -17,12 +17,15 @@ import { MessageComposer } from "./MessageComposer";
 import { UserBar } from "./UserBar";
 import { VoiceConnectedBar } from "./VoiceConnectedBar";
 import { ProfileEditor } from "./ProfileEditor";
+import { UserProfilePopout } from "./UserProfilePopout";
+import { CreateChannelModal } from "./CreateChannelModal";
 import { MembersPanel, type ServerMember } from "./MembersPanel";
 import { useServerPresence } from "@/hooks/useServerPresence";
 import { createClient } from "@/lib/supabase/client";
 import { playJoinSound, playLeaveSound, unlockAudio } from "@/lib/call-sounds";
 import { ensureMicAccess, refreshMediaDevices } from "@/lib/media-devices";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/Toast";
 
 const CallOverlay = dynamic(
   () => import("./CallOverlay").then((m) => m.CallOverlay),
@@ -64,16 +67,30 @@ type AppShellProps = {
   channel: Channel;
   messages: Message[];
   userId: string;
+  profile?: Profile | null;
   displayName: string;
   avatarUrl?: string | null;
   loadingMessages?: boolean;
   demo?: boolean;
-  onSend: (content: string) => Promise<void> | void;
+  replyTo?: Message | null;
+  typingNames?: string[];
+  mutedChannels?: Set<string>;
+  serverMuted?: boolean;
+  unreadChannels?: Set<string>;
+  compact?: boolean;
+  onSend: (content: string, replyToId?: string | null) => Promise<void> | void;
+  onEdit?: (messageId: string, content: string) => Promise<void> | void;
+  onDelete?: (messageId: string) => Promise<void> | void;
+  onReact?: (messageId: string, emoji: string) => Promise<void> | void;
+  onReply?: (message: Message) => void;
+  onCancelReply?: () => void;
+  onTyping?: () => void;
+  onCreateChannel?: (name: string, kind: "text" | "voice") => Promise<void> | void;
+  onMuteChannel?: (channelId: string, mute: boolean) => Promise<void> | void;
+  onMuteServer?: (mute: boolean) => Promise<void> | void;
+  onToggleCompact?: () => void;
   onSignOut?: () => void;
-  onProfileSaved?: (next: {
-    displayName: string;
-    avatarUrl: string | null;
-  }) => void;
+  onProfileSaved?: (next: Profile) => void;
 };
 
 type VoiceSession = {
@@ -138,14 +155,32 @@ export function AppShell({
   channel,
   messages,
   userId,
+  profile,
   displayName,
   avatarUrl,
   loadingMessages,
   demo,
+  replyTo,
+  typingNames,
+  mutedChannels,
+  serverMuted,
+  unreadChannels,
+  compact,
   onSend,
+  onEdit,
+  onDelete,
+  onReact,
+  onReply,
+  onCancelReply,
+  onTyping,
+  onCreateChannel,
+  onMuteChannel,
+  onMuteServer,
+  onToggleCompact,
   onSignOut,
   onProfileSaved,
 }: AppShellProps) {
+  const { toast } = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [voiceSession, setVoiceSession] = useState<VoiceSession | null>(null);
   const [callConnected, setCallConnected] = useState(false);
@@ -156,17 +191,23 @@ export function AppShell({
   >([]);
   const [speakingIds, setSpeakingIds] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [localName, setLocalName] = useState(displayName);
-  const [localAvatar, setLocalAvatar] = useState(avatarUrl ?? null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [popoutProfile, setPopoutProfile] = useState<Profile | null>(null);
+  const [localProfile, setLocalProfile] = useState<Profile | null>(
+    profile ?? null,
+  );
 
   useEffect(() => {
-    setLocalName(displayName);
-    setLocalAvatar(avatarUrl ?? null);
-  }, [displayName, avatarUrl]);
+    if (profile) setLocalProfile(profile);
+  }, [profile]);
+
+  const localName = localProfile?.display_name ?? displayName;
+  const localAvatar = localProfile?.avatar_url ?? avatarUrl ?? null;
+  const localStatus = localProfile?.status ?? "online";
+  const localCustomStatus = localProfile?.custom_status ?? null;
 
   const inCall = voiceSession != null;
   const isVoice = (channel.kind ?? "text") === "voice";
-  // Full call UI only on the connected voice channel; PiP on every other channel (all text chats)
   const viewingCallUi = Boolean(
     inCall &&
       voiceSession &&
@@ -198,7 +239,6 @@ export function AppShell({
     void import("./CallOverlay");
   }, [isVoice, demo]);
 
-  // Leaving the server drops the call — switching channels does not
   useEffect(() => {
     setVoiceSession(null);
     setCallConnected(false);
@@ -232,12 +272,41 @@ export function AppShell({
     setSpeakingIds(ids);
   }, []);
   const handleProfileSaved = useCallback(
-    (next: { displayName: string; avatarUrl: string | null }) => {
-      setLocalName(next.displayName);
-      setLocalAvatar(next.avatarUrl);
+    (next: Profile) => {
+      setLocalProfile((prev) => ({ ...(prev ?? next), ...next }));
       onProfileSaved?.(next);
     },
     [onProfileSaved],
+  );
+
+  const openProfile = useCallback(
+    async (userIdToOpen: string) => {
+      if (demo) return;
+      if (localProfile && userIdToOpen === localProfile.id) {
+        setPopoutProfile(localProfile);
+        return;
+      }
+      const member = serverMembers.find((m) => m.id === userIdToOpen);
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userIdToOpen)
+        .maybeSingle();
+      if (data) {
+        setPopoutProfile(data as Profile);
+      } else if (member) {
+        setPopoutProfile({
+          id: member.id,
+          display_name: member.display_name,
+          avatar_url: member.avatar_url,
+          status: member.status,
+          custom_status: member.custom_status,
+          bio: member.bio,
+        });
+      }
+    },
+    [demo, localProfile, serverMembers],
   );
 
   const joinVoice = useCallback(() => {
@@ -268,20 +337,25 @@ export function AppShell({
     async function loadMembers() {
       const { data } = await supabase
         .from("server_members")
-        .select("user_id, profiles(id, display_name, avatar_url)")
+        .select(
+          "user_id, profiles(id, display_name, avatar_url, status, custom_status, bio)",
+        )
         .eq("server_id", server.id);
 
       if (cancelled) return;
 
       const rows: ServerMember[] = (data ?? [])
         .map((row) => {
-          const profile = row.profiles as Profile | Profile[] | null;
-          const p = Array.isArray(profile) ? profile[0] : profile;
+          const pRaw = row.profiles as Profile | Profile[] | null;
+          const p = Array.isArray(pRaw) ? pRaw[0] : pRaw;
           if (!p) return null;
           return {
             id: p.id,
             display_name: p.display_name,
             avatar_url: p.avatar_url,
+            status: p.status,
+            custom_status: p.custom_status,
+            bio: p.bio,
           };
         })
         .filter(Boolean) as ServerMember[];
@@ -374,6 +448,15 @@ export function AppShell({
             hrefForChannel={hrefForChannel}
             homeHref={homeHref}
             voiceOccupants={voiceOccupants}
+            unreadChannels={unreadChannels}
+            mutedChannels={mutedChannels}
+            serverMuted={serverMuted}
+            onCreateChannel={
+              demo || !onCreateChannel ? undefined : () => setCreateOpen(true)
+            }
+            onMuteChannel={demo ? undefined : onMuteChannel}
+            onMuteServer={demo ? undefined : onMuteServer}
+            onCopyInvite={() => toast("Invite copied", "success")}
           />
           {inCall && voiceSession && !demo && (
             <VoiceConnectedBar
@@ -390,8 +473,12 @@ export function AppShell({
           <UserBar
             displayName={localName}
             avatarUrl={localAvatar}
+            status={localStatus}
+            customStatus={localCustomStatus}
             onSignOut={onSignOut}
             onOpenSettings={demo ? undefined : () => setSettingsOpen(true)}
+            onToggleCompact={onToggleCompact}
+            compact={compact}
           />
         </div>
       </div>
@@ -417,7 +504,6 @@ export function AppShell({
           </Link>
         </div>
 
-        {/* Keep LiveKit mounted; full UI on Lounge, Discord PiP elsewhere */}
         {inCall && voiceSession && !demo && (
           <div
             className={
@@ -523,10 +609,26 @@ export function AppShell({
             <>
               <MessagePane
                 channelName={channel.name}
+                channelTopic={channel.topic}
                 messages={messages}
                 loading={loadingMessages}
+                currentUserId={userId}
+                compact={compact}
+                typingNames={typingNames}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                onReply={onReply}
+                onReact={onReact}
+                onOpenProfile={(id) => void openProfile(id)}
               />
-              <MessageComposer channelName={channel.name} onSend={onSend} />
+              <MessageComposer
+                channelName={channel.name}
+                channelId={channel.id}
+                replyTo={replyTo}
+                onCancelReply={onCancelReply}
+                onSend={onSend}
+                onTyping={onTyping}
+              />
             </>
           ))}
       </div>
@@ -535,6 +637,7 @@ export function AppShell({
         <MembersPanel
           serverMembers={serverMembers}
           speakingIds={speakingIds}
+          onOpenProfile={(id) => void openProfile(id)}
           online={(() => {
             const byId = new Map(online.map((u) => [u.user_id, u]));
             if (inCall && voiceSession && userId) {
@@ -566,11 +669,32 @@ export function AppShell({
         <ProfileEditor
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
-          displayName={localName}
-          avatarUrl={localAvatar}
+          profile={
+            localProfile ?? {
+              id: userId,
+              display_name: localName,
+              avatar_url: localAvatar,
+              status: localStatus,
+              custom_status: localCustomStatus,
+            }
+          }
           onSaved={handleProfileSaved}
         />
       )}
+
+      {!demo && onCreateChannel && (
+        <CreateChannelModal
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onCreate={onCreateChannel}
+        />
+      )}
+
+      <UserProfilePopout
+        open={Boolean(popoutProfile)}
+        profile={popoutProfile}
+        onClose={() => setPopoutProfile(null)}
+      />
     </div>
   );
 }

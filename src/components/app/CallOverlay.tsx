@@ -167,6 +167,11 @@ export function CallOverlay({
   ]);
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
+  const [deafened, setDeafened] = useState(false);
+  const [pttMode, setPttMode] = useState(false);
+  const [pttHeld, setPttHeld] = useState(false);
+  const [connLabel, setConnLabel] = useState("Connecting…");
+  const [peerVolumes, setPeerVolumes] = useState<Record<string, number>>({});
   const [mediaBusy, setMediaBusy] = useState(false);
   const [deviceHint, setDeviceHint] = useState<string | null>(null);
   const [micHelpSteps, setMicHelpSteps] = useState<string[]>([]);
@@ -179,8 +184,13 @@ export function CallOverlay({
   const [boardReady, setBoardReady] = useState(true);
 
   const roomRef = useRef<Room | null>(null);
+  const audioHostRef = useRef<HTMLDivElement | null>(null);
+  const deafenedRef = useRef(false);
+  const peerVolumesRef = useRef<Record<string, number>>({});
   const mediaBusyRef = useRef(false);
   const intentionalLeave = useRef(false);
+  const micBeforeDeafen = useRef(true);
+  const pttModeRef = useRef(false);
   const knownRemotes = useRef<Set<string> | null>(null);
   const peerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onConnectedRef = useRef(onConnected);
@@ -235,6 +245,7 @@ export function CallOverlay({
     audioHost.style.cssText =
       "position:fixed;width:1px;height:1px;left:-9999px;top:0;overflow:hidden;opacity:0;pointer-events:none";
     document.body.appendChild(audioHost);
+    audioHostRef.current = audioHost;
 
     const attachedAudio = new Set<string>();
 
@@ -245,9 +256,11 @@ export function CallOverlay({
       attachedAudio.add(key);
       const el = track.attach() as HTMLMediaElement;
       el.dataset.hangoTrack = key;
+      el.dataset.hangoPeer = participantId;
       el.autoplay = true;
-      el.muted = false;
-      el.volume = 1;
+      el.muted = deafenedRef.current;
+      const vol = peerVolumesRef.current[participantId] ?? 1;
+      el.volume = Math.min(1, Math.max(0, vol));
       audioHost.appendChild(el);
       void el.play().catch(() => {
         setAudioBlocked(true);
@@ -327,14 +340,20 @@ export function CallOverlay({
       .on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
         if (state === ConnectionState.Connected) {
           setStatus("live");
+          setConnLabel("Voice Connected");
           onConnectedRef.current?.();
           schedulePeers();
           knownRemotes.current = new Set(room.remoteParticipants.keys());
+        } else if (state === ConnectionState.Connecting) {
+          setConnLabel("Connecting…");
+        } else if (state === ConnectionState.Reconnecting) {
+          setConnLabel("Reconnecting…");
         } else if (
           state === ConnectionState.Disconnected &&
           !intentionalLeave.current
         ) {
           setStatus("error");
+          setConnLabel("Disconnected");
           setError("Disconnected from the call.");
           onDisconnectedRef.current?.();
         }
@@ -420,9 +439,57 @@ export function CallOverlay({
       room.removeAllListeners();
       roomRef.current = null;
       setRoom(null);
+      audioHostRef.current = null;
       audioHost.remove();
     };
   }, [channelId, displayName, schedulePeers]);
+
+  function applyDeafenedToAudio(muted: boolean) {
+    const host = audioHostRef.current;
+    if (!host) return;
+    host.querySelectorAll("audio, video").forEach((node) => {
+      const el = node as HTMLMediaElement;
+      el.muted = muted;
+    });
+  }
+
+  function applyPeerVolume(peerId: string, volume: number) {
+    const host = audioHostRef.current;
+    if (!host) return;
+    host.querySelectorAll(`[data-hango-peer="${peerId}"]`).forEach((node) => {
+      const el = node as HTMLMediaElement;
+      el.volume = Math.min(1, Math.max(0, volume));
+    });
+  }
+
+  async function toggleDeafen() {
+    const next = !deafenedRef.current;
+    deafenedRef.current = next;
+    setDeafened(next);
+    applyDeafenedToAudio(next);
+    playMuteSound();
+    const r = roomRef.current;
+    if (!r) return;
+    if (next) {
+      micBeforeDeafen.current = r.localParticipant.isMicrophoneEnabled;
+      if (micBeforeDeafen.current) {
+        try {
+          await r.localParticipant.setMicrophoneEnabled(false);
+          setMicOn(false);
+        } catch {
+          /* ignore */
+        }
+      }
+    } else if (micBeforeDeafen.current && !pttModeRef.current) {
+      try {
+        await enableMicrophone(r, r.getActiveDevice("audioinput") || undefined);
+        setMicOn(true);
+        playUnmuteSound();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 
   async function withMediaLock(fn: () => Promise<void>) {
     if (mediaBusyRef.current) return;
@@ -528,6 +595,64 @@ export function CallOverlay({
         }
       }
     });
+  }
+
+  // Push-to-talk: hold Space while PTT mode is on
+  useEffect(() => {
+    pttModeRef.current = pttMode;
+  }, [pttMode]);
+
+  useEffect(() => {
+    if (!pttMode || status !== "live") return;
+
+    async function setTalking(on: boolean) {
+      const r = roomRef.current;
+      if (!r || deafenedRef.current) return;
+      setPttHeld(on);
+      try {
+        if (on) {
+          await enableMicrophone(r, r.getActiveDevice("audioinput") || undefined);
+          setMicOn(true);
+        } else {
+          await r.localParticipant.setMicrophoneEnabled(false);
+          setMicOn(false);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.code !== "Space" || e.repeat) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      void setTalking(true);
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code !== "Space") return;
+      e.preventDefault();
+      void setTalking(false);
+    }
+
+    // Start muted in PTT mode
+    void setTalking(false);
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [pttMode, status]);
+
+  function handlePeerVolume(peerId: string, volume: number) {
+    setPeerVolumes((prev) => {
+      const next = { ...prev, [peerId]: volume };
+      peerVolumesRef.current = next;
+      return next;
+    });
+    applyPeerVolume(peerId, volume);
   }
 
   function handleLeave() {
@@ -763,7 +888,9 @@ export function CallOverlay({
             </h1>
           </div>
           <p className="mt-0.5 text-xs text-text-muted">
-            {live ? `${peers.length} connected` : "Connecting…"}
+            {live ? `${peers.length} · ${connLabel}` : connLabel}
+            {deafened ? " · Deafened" : ""}
+            {pttMode ? (pttHeld ? " · PTT live" : " · PTT (hold Space)") : ""}
           </p>
         </div>
       </header>
@@ -831,6 +958,12 @@ export function CallOverlay({
               peer={p}
               room={room}
               speaking={speakingIds.includes(p.identity)}
+              volume={peerVolumes[p.identity] ?? 1}
+              onVolumeChange={
+                p.isLocal
+                  ? undefined
+                  : (v) => handlePeerVolume(p.identity, v)
+              }
             />
           ))}
         </div>
@@ -847,8 +980,8 @@ export function CallOverlay({
             room={room}
             kind="audioinput"
             label="Microphone"
-            enabled={micOn}
-            disabled={!room || mediaBusy}
+            enabled={micOn && !deafened}
+            disabled={!room || mediaBusy || deafened || pttMode}
             dangerWhenOff
             onToggle={toggleMic}
             onDeviceError={setDeviceHint}
@@ -861,11 +994,39 @@ export function CallOverlay({
             iconOn={<IconMic />}
             iconOff={<IconMicOff />}
           />
+          <button
+            type="button"
+            title={deafened ? "Undeafen" : "Deafen"}
+            disabled={!room || mediaBusy}
+            onClick={() => void toggleDeafen()}
+            className={cn(
+              "flex h-12 w-11 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+              deafened
+                ? "bg-white text-black"
+                : "bg-white/10 text-white hover:bg-white/15",
+            )}
+          >
+            {deafened ? <IconDeafened /> : <IconHeadphones />}
+          </button>
+          <button
+            type="button"
+            title={pttMode ? "Switch to voice activity" : "Push to talk"}
+            disabled={!live || deafened}
+            onClick={() => setPttMode((v) => !v)}
+            className={cn(
+              "flex h-12 items-center rounded-full px-3 text-[11px] font-medium transition-colors disabled:opacity-50",
+              pttMode
+                ? "bg-emerald-500 text-black"
+                : "bg-white/10 text-white hover:bg-white/15",
+            )}
+          >
+            PTT
+          </button>
           <DeviceControl
             room={room}
             kind="audiooutput"
             label="Speakers / headphones"
-            enabled
+            enabled={!deafened}
             disabled={!room || mediaBusy}
             hideToggle
             onDeviceError={setDeviceHint}
@@ -887,7 +1048,7 @@ export function CallOverlay({
             <button
               type="button"
               title="Soundboard"
-              disabled={!live}
+              disabled={!live || deafened}
               onClick={() => setBoardOpen((v) => !v)}
               className="flex h-12 w-11 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/15 disabled:opacity-50"
             >
@@ -941,11 +1102,15 @@ const PeerTile = function PeerTile({
   room,
   compact,
   speaking,
+  volume = 1,
+  onVolumeChange,
 }: {
   peer: PeerSnapshot;
   room: Room | null;
   compact?: boolean;
   speaking?: boolean;
+  volume?: number;
+  onVolumeChange?: (volume: number) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -1033,10 +1198,24 @@ const PeerTile = function PeerTile({
             </span>
           )}
         </div>
+        {onVolumeChange && !compact && (
+          <label className="mt-1.5 flex items-center gap-2 text-[10px] text-white/60">
+            Vol
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={volume}
+              onChange={(e) => onVolumeChange(Number(e.target.value))}
+              className="h-1 w-full accent-emerald-400"
+            />
+          </label>
+        )}
       </div>
     </div>
   );
-}
+};
 
 const PIP_W = 300;
 const PIP_H = 220;
@@ -1586,6 +1765,31 @@ function IconHeadphones() {
       />
       <path
         d="M4 13a8 8 0 0 1 16 0"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconDeafened() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4 13v3a2 2 0 0 0 2 2h1v-7H6a2 2 0 0 0-2 2ZM17 11h1a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-1v-7Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 13a8 8 0 0 1 16 0"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+      <path
+        d="M4 4l16 16"
         stroke="currentColor"
         strokeWidth="1.75"
         strokeLinecap="round"

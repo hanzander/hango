@@ -1,22 +1,38 @@
 "use client";
 
 import { Avatar } from "@/components/ui/Avatar";
+import type { UserStatus } from "@/lib/types";
 
 type UserBarProps = {
   displayName: string;
   avatarUrl?: string | null;
+  status?: UserStatus;
+  customStatus?: string | null;
+  compact?: boolean;
   onSignOut?: () => void;
   onOpenSettings?: () => void;
+  onToggleCompact?: () => void;
+};
+
+const STATUS_LABEL: Record<UserStatus, string> = {
+  online: "Online",
+  idle: "Idle",
+  dnd: "Do Not Disturb",
+  invisible: "Invisible",
 };
 
 export function UserBar({
   displayName,
   avatarUrl,
+  status = "online",
+  customStatus,
+  compact,
   onSignOut,
   onOpenSettings,
+  onToggleCompact,
 }: UserBarProps) {
   return (
-    <div className="flex items-center gap-2 border-t border-border bg-bg-elevated px-2 py-2">
+    <div className="flex items-center gap-1 border-t border-border bg-bg-elevated px-2 py-2">
       <button
         type="button"
         onClick={onOpenSettings}
@@ -26,9 +42,21 @@ export function UserBar({
         <Avatar name={displayName} src={avatarUrl} size="sm" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium text-text">{displayName}</p>
-          <p className="truncate text-[10px] text-text-muted">Online</p>
+          <p className="truncate text-[10px] text-text-muted">
+            {customStatus || STATUS_LABEL[status]}
+          </p>
         </div>
       </button>
+      {onToggleCompact && (
+        <button
+          type="button"
+          onClick={onToggleCompact}
+          className="rounded-md px-1.5 py-1 text-[10px] text-text-muted transition-colors hover:bg-bg-hover hover:text-text"
+          title="Toggle compact messages"
+        >
+          {compact ? "Cozy" : "Compact"}
+        </button>
+      )}
       {onOpenSettings && (
         <button
           type="button"
