@@ -10,14 +10,14 @@ let sharedCtx: AudioContext | null = null;
 let lastPlayAt = 0;
 const MIN_GAP_MS = 80;
 
-/** Keep SFX clearly audible over call audio */
+/** Keep SFX clearly audible over call audio (+10%) */
 const VOL = {
-  join: 0.22,
-  leave: 0.2,
-  peer: 0.16,
-  mute: 0.1,
-  camera: 0.09,
-  message: 0.2,
+  join: 0.22 * 1.1,
+  leave: 0.2 * 1.1,
+  peer: 0.16 * 1.1,
+  mute: 0.1 * 1.1,
+  camera: 0.09 * 1.1,
+  message: 0.2 * 1.1,
 } as const;
 
 let lastMessagePlayAt = 0;

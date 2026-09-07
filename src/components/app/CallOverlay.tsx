@@ -162,6 +162,7 @@ export function CallOverlay({
   const [camOn, setCamOn] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
   const [deviceHint, setDeviceHint] = useState<string | null>(null);
+  const [micHelpSteps, setMicHelpSteps] = useState<string[]>([]);
   const [needsMicAllow, setNeedsMicAllow] = useState(false);
   const [micAllowBusy, setMicAllowBusy] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -342,6 +343,12 @@ export function CallOverlay({
           setDeviceHint(friendlyDeviceError(micErr, "microphone"));
           setMicOn(false);
           setNeedsMicAllow(true);
+          setMicHelpSteps([
+            "Click Allow microphone below (or in the mic menu)",
+            "If a popup appears, choose Allow",
+            "If it says blocked: address bar lock → Microphone → Allow, then reload",
+            "Windows: Settings → Privacy → Microphone must be on for your browser",
+          ]);
           void warmDeviceCache();
         }
         schedulePeers();
@@ -425,24 +432,34 @@ export function CallOverlay({
   async function allowMicrophone() {
     setMicAllowBusy(true);
     setDeviceHint(null);
+    setMicHelpSteps([]);
     try {
       const access = await ensureMicAccess();
       if (!access.ok) {
         setNeedsMicAllow(true);
         setDeviceHint(access.message);
+        setMicHelpSteps(access.steps);
         return;
       }
       const r = roomRef.current;
       if (r && r.state === ConnectionState.Connected) {
-        await enableMicrophone(r, access.devices[0]?.deviceId);
+        const preferred =
+          access.deviceId || access.devices[0]?.deviceId || undefined;
+        await enableMicrophone(r, preferred);
         setMicOn(true);
         setNeedsMicAllow(false);
+        setMicHelpSteps([]);
         playUnmuteSound();
         schedulePeers();
       }
     } catch (err) {
       setNeedsMicAllow(true);
       setDeviceHint(friendlyDeviceError(err, "microphone"));
+      setMicHelpSteps([
+        "Click the lock icon in the address bar → Microphone → Allow",
+        "Windows: Settings → Privacy → Microphone → enable for your browser",
+        "Close other apps using the mic, then click Allow microphone again",
+      ]);
     } finally {
       setMicAllowBusy(false);
     }
@@ -704,13 +721,22 @@ export function CallOverlay({
       )}
 
       {(needsMicAllow || deviceHint) && (
-        <div className="relative z-10 mx-5 mb-2 flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-100 sm:flex-row sm:items-center sm:justify-between">
-          <p className="min-w-0 flex-1">
-            {deviceHint ||
-              "Microphone needs permission. Click Allow microphone — if nothing pops up, use the lock icon in the address bar → Microphone → Allow."}
-          </p>
-          <div className="flex shrink-0 items-center gap-2">
-            {(needsMicAllow || !micOn) && (
+        <div className="relative z-10 mx-5 mb-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs text-amber-50">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="font-medium text-amber-100">
+                {deviceHint ||
+                  "Your mic isn’t on yet. Click Allow microphone — a browser popup should ask for access."}
+              </p>
+              {micHelpSteps.length > 0 && (
+                <ol className="list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-amber-100/80">
+                  {micHelpSteps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
                 disabled={micAllowBusy}
@@ -719,16 +745,19 @@ export function CallOverlay({
               >
                 {micAllowBusy ? "Requesting…" : "Allow microphone"}
               </button>
-            )}
-            {deviceHint && (
-              <button
-                type="button"
-                className="text-amber-200/80 hover:text-white"
-                onClick={() => setDeviceHint(null)}
-              >
-                Dismiss
-              </button>
-            )}
+              {deviceHint && (
+                <button
+                  type="button"
+                  className="text-amber-200/80 hover:text-white"
+                  onClick={() => {
+                    setDeviceHint(null);
+                    setMicHelpSteps([]);
+                  }}
+                >
+                  Dismiss
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1200,14 +1229,20 @@ function DeviceMenu({
       if (kind === "audioinput" || kind === "audiooutput") {
         const access = await ensureMicAccess();
         if (!access.ok) {
-          setLocalHint(access.message);
+          setLocalHint(
+            [access.message, ...access.steps.map((s, i) => `${i + 1}. ${s}`)].join(
+              " ",
+            ),
+          );
           onDeviceError?.(access.message);
           return;
         }
         setDevices(access.devices);
-        if (access.devices[0]) setActiveId(access.devices[0].deviceId);
+        const preferred =
+          access.deviceId || access.devices[0]?.deviceId || undefined;
+        if (preferred) setActiveId(preferred);
         if (kind === "audioinput") {
-          await enableMicrophone(room, access.devices[0]?.deviceId);
+          await enableMicrophone(room, preferred);
           onMicRecovered?.();
         }
         const outs = await refreshMediaDevices("audiooutput");
@@ -1216,7 +1251,9 @@ function DeviceMenu({
           setActiveId(outs[0].deviceId);
         }
       } else {
-        const list = await refreshMediaDevices(kind, { requestPermission: true });
+        const list = await refreshMediaDevices(kind, {
+          requestPermission: true,
+        });
         if (list.length > 0) {
           setDevices(list);
           setActiveId(list[0].deviceId);
@@ -1282,7 +1319,7 @@ function DeviceMenu({
                   ? "Camera blocked or missing."
                   : kind === "audiooutput"
                     ? "Allow mic once so the browser can list speakers."
-                    : "Browser hasn't allowed the microphone yet (common on a friend's PC).")}
+                    : "Click Allow microphone. If Windows blocked it, turn on mic access for your browser in Privacy settings.")}
             </p>
             <button
               type="button"
