@@ -7,11 +7,13 @@ import {
   memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { Channel, Message, Profile, Server } from "@/lib/types";
+import { serverCapabilities } from "@/lib/permissions";
 import { ChannelList } from "./ChannelList";
 import { MessagePane } from "./MessagePane";
 import { MessageComposer, type SendPayload } from "./MessageComposer";
@@ -100,6 +102,15 @@ type AppShellProps = {
   onCreateChannel?: (name: string, kind: "text" | "voice") => Promise<void> | void;
   onMuteChannel?: (channelId: string, mute: boolean) => Promise<void> | void;
   onMuteServer?: (mute: boolean) => Promise<void> | void;
+  onSetChannelNotif?: (
+    channelId: string,
+    level: "all" | "mentions" | "nothing",
+  ) => Promise<void> | void;
+  onSetServerNotif?: (
+    level: "all" | "mentions" | "nothing",
+  ) => Promise<void> | void;
+  channelNotifLevels?: Record<string, "all" | "mentions" | "nothing">;
+  serverNotifLevel?: "all" | "mentions" | "nothing";
   onToggleCompact?: () => void;
   onSearchChange?: (q: string) => void;
   onTogglePins?: () => void;
@@ -202,6 +213,10 @@ export function AppShell({
   onCreateChannel,
   onMuteChannel,
   onMuteServer,
+  onSetChannelNotif,
+  onSetServerNotif,
+  channelNotifLevels,
+  serverNotifLevel,
   onToggleCompact,
   onSearchChange,
   onTogglePins,
@@ -532,6 +547,17 @@ export function AppShell({
     return map;
   })();
 
+  const isOwner = server.owner_id === userId;
+  const caps = useMemo(
+    () =>
+      serverCapabilities(
+        isOwner,
+        memberRoleIds[userId] ?? [],
+        roles,
+      ),
+    [isOwner, memberRoleIds, userId, roles],
+  );
+
   const occupants = isVoice
     ? (voiceOccupants[channel.id]?.length ?? 0)
     : 0;
@@ -566,12 +592,22 @@ export function AppShell({
             mutedChannels={mutedChannels}
             serverMuted={serverMuted}
             onCreateChannel={
-              demo || !onCreateChannel ? undefined : () => setCreateOpen(true)
+              demo || !onCreateChannel || !caps.canManageChannels
+                ? undefined
+                : () => setCreateOpen(true)
             }
             onMuteChannel={demo ? undefined : onMuteChannel}
             onMuteServer={demo ? undefined : onMuteServer}
+            onSetChannelNotif={demo ? undefined : onSetChannelNotif}
+            onSetServerNotif={demo ? undefined : onSetServerNotif}
+            channelNotifLevels={channelNotifLevels}
+            serverNotifLevel={serverNotifLevel}
             onCopyInvite={() => toast("Invite copied", "success")}
-            onOpenRoles={demo ? undefined : () => setRolesOpen(true)}
+            onOpenRoles={
+              demo || !caps.canManageRoles
+                ? undefined
+                : () => setRolesOpen(true)
+            }
             onOpenSearch={demo ? undefined : () => setSearchOpen(true)}
             onOpenEmoji={demo ? undefined : () => setEmojiOpen(true)}
             onOpenThreads={
@@ -743,6 +779,7 @@ export function AppShell({
                 messages={messages}
                 loading={loadingMessages}
                 currentUserId={userId}
+                canManageMessages={caps.canManageMessages}
                 compact={compact}
                 typingNames={typingNames}
                 searchQuery={searchQuery}
@@ -795,7 +832,9 @@ export function AppShell({
           serverMembers={serverMembers}
           speakingIds={speakingIds}
           currentUserId={userId}
-          isOwner={server.owner_id === userId}
+          isOwner={caps.isOwner}
+          canKick={caps.canKick}
+          canManageRoles={caps.canManageRoles}
           roles={roles}
           memberRoleIds={memberRoleIds}
           onOpenProfile={(id) => void openProfile(id)}
@@ -913,7 +952,8 @@ export function AppShell({
               });
           }}
           serverId={server.id}
-          isOwner={server.owner_id === userId}
+          isOwner={caps.isOwner}
+          canManageRoles={caps.canManageRoles}
         />
       )}
 
@@ -966,8 +1006,10 @@ export function AppShell({
         open={Boolean(popoutProfile)}
         profile={popoutProfile}
         onClose={() => setPopoutProfile(null)}
-        isOwner={server.owner_id === userId}
+        isOwner={caps.isOwner}
         isSelf={popoutProfile?.id === userId}
+        canKick={caps.canKick}
+        canManageRoles={caps.canManageRoles}
         roles={roles}
         assignedRoleIds={
           popoutProfile ? (memberRoleIds[popoutProfile.id] ?? []) : []

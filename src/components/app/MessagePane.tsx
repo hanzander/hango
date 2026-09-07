@@ -21,6 +21,7 @@ type MessagePaneProps = {
   messages: Message[];
   loading?: boolean;
   currentUserId?: string;
+  canManageMessages?: boolean;
   compact?: boolean;
   typingNames?: string[];
   searchQuery?: string;
@@ -43,6 +44,7 @@ export function MessagePane({
   messages,
   loading,
   currentUserId,
+  canManageMessages,
   compact,
   typingNames = [],
   searchQuery = "",
@@ -186,6 +188,7 @@ export function MessagePane({
                   compact={compact}
                   currentUserId={currentUserId}
                   isOwn={message.author_id === currentUserId}
+                  canManageMessages={canManageMessages}
                   editing={editingId === message.id}
                   editValue={editValue}
                   onEditValue={setEditValue}
@@ -255,6 +258,7 @@ function MessageRow({
   compact,
   currentUserId,
   isOwn,
+  canManageMessages,
   editing,
   editValue,
   onEditValue,
@@ -274,6 +278,7 @@ function MessageRow({
   compact?: boolean;
   currentUserId?: string;
   isOwn: boolean;
+  canManageMessages?: boolean;
   editing: boolean;
   editValue: string;
   onEditValue: (v: string) => void;
@@ -506,22 +511,22 @@ function MessageRow({
           </button>
         )}
         {isOwn && (
-          <>
-            <button
-              type="button"
-              className="rounded px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text"
-              onClick={onStartEdit}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              className="rounded px-1.5 py-0.5 text-[11px] text-red-300 hover:bg-red-500/10"
-              onClick={onDelete}
-            >
-              Delete
-            </button>
-          </>
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text"
+            onClick={onStartEdit}
+          >
+            Edit
+          </button>
+        )}
+        {(isOwn || canManageMessages) && (
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-[11px] text-red-300 hover:bg-red-500/10"
+            onClick={onDelete}
+          >
+            Delete
+          </button>
         )}
       </div>
     </li>

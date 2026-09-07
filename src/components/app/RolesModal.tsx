@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ServerRole } from "@/lib/types";
+import { ROLE_PERMS } from "@/lib/permissions";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/utils";
 
@@ -10,16 +11,12 @@ type RolesModalProps = {
   open: boolean;
   onClose: () => void;
   serverId: string;
-  isOwner: boolean;
+  canManageRoles?: boolean;
+  /** @deprecated use canManageRoles */
+  isOwner?: boolean;
 };
 
-/** Bitmask flags stored on server_roles.permissions */
-export const ROLE_PERMS = {
-  MANAGE_CHANNELS: 1 << 0,
-  KICK_MEMBERS: 1 << 1,
-  MANAGE_ROLES: 1 << 2,
-  MANAGE_MESSAGES: 1 << 3,
-} as const;
+export { ROLE_PERMS };
 
 const PERM_OPTIONS: { bit: number; label: string }[] = [
   { bit: ROLE_PERMS.MANAGE_CHANNELS, label: "Manage channels" },
@@ -32,8 +29,10 @@ export function RolesModal({
   open,
   onClose,
   serverId,
+  canManageRoles,
   isOwner,
 }: RolesModalProps) {
+  const canEdit = canManageRoles ?? isOwner ?? false;
   const { toast } = useToast();
   const [roles, setRoles] = useState<ServerRole[]>([]);
   const [name, setName] = useState("");
@@ -76,7 +75,7 @@ export function RolesModal({
 
   async function createRole(e: FormEvent) {
     e.preventDefault();
-    if (!isOwner || !name.trim()) return;
+    if (!canEdit || !name.trim()) return;
     const supabase = createClient();
     const { data, error } = await supabase
       .from("server_roles")
@@ -100,7 +99,7 @@ export function RolesModal({
   }
 
   async function saveRolePerms(role: ServerRole, nextPerms: number) {
-    if (!isOwner) return;
+    if (!canEdit) return;
     const supabase = createClient();
     const { error } = await supabase
       .from("server_roles")
@@ -151,7 +150,7 @@ export function RolesModal({
                 onClick={() =>
                   setEditingId((id) => (id === r.id ? null : r.id))
                 }
-                disabled={!isOwner}
+                disabled={!canEdit}
               >
                 <span
                   className="h-3 w-3 shrink-0 rounded-full"
@@ -166,7 +165,7 @@ export function RolesModal({
                   perms
                 </span>
               </button>
-              {editingId === r.id && isOwner && (
+              {editingId === r.id && canEdit && (
                 <div className="mt-2 grid grid-cols-2 gap-1 border-t border-border pt-2">
                   {PERM_OPTIONS.map((opt) => {
                     const on = Boolean(r.permissions & opt.bit);
@@ -195,7 +194,7 @@ export function RolesModal({
             </div>
           ))}
         </div>
-        {isOwner && (
+        {canEdit && (
           <form
             onSubmit={(e) => void createRole(e)}
             className="space-y-2 border-t border-border px-5 py-4"

@@ -279,6 +279,10 @@ export function ProfileEditor({
           >
             Enable desktop notifications
           </button>
+          <p className="text-[11px] leading-relaxed text-text-muted">
+            Per-server and per-channel levels: open the server menu (▾) or
+            right-click a channel → All / Mentions only / Nothing.
+          </p>
 
           {error && <p className="text-xs text-danger">{error}</p>}
 

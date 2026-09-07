@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { Channel, Server } from "@/lib/types";
 import type { PresenceUser } from "@/hooks/useServerPresence";
+import type { NotificationLevel } from "@/lib/permissions";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
 
@@ -18,9 +19,13 @@ type ChannelListProps = {
   unreadChannels?: Set<string>;
   mutedChannels?: Set<string>;
   serverMuted?: boolean;
+  channelNotifLevels?: Record<string, NotificationLevel>;
+  serverNotifLevel?: NotificationLevel;
   onCreateChannel?: () => void;
   onMuteChannel?: (channelId: string, mute: boolean) => void;
   onMuteServer?: (mute: boolean) => void;
+  onSetChannelNotif?: (channelId: string, level: NotificationLevel) => void;
+  onSetServerNotif?: (level: NotificationLevel) => void;
   onCopyInvite?: () => void;
   onOpenRoles?: () => void;
   onOpenSearch?: () => void;
@@ -43,9 +48,13 @@ export function ChannelList({
   unreadChannels,
   mutedChannels,
   serverMuted,
+  channelNotifLevels = {},
+  serverNotifLevel = "all",
   onCreateChannel,
   onMuteChannel,
   onMuteServer,
+  onSetChannelNotif,
+  onSetServerNotif,
   onCopyInvite,
   onOpenRoles,
   onOpenSearch,
@@ -107,7 +116,8 @@ export function ChannelList({
     channelId: string,
     kind: "text" | "voice",
   ) {
-    if (kind !== "text" || !onMuteChannel) return;
+    if (kind !== "text") return;
+    if (!onMuteChannel && !onSetChannelNotif) return;
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY, channelId });
   }
@@ -192,14 +202,30 @@ export function ChannelList({
                 }}
               />
             )}
-            {onMuteServer && (
-              <MenuItem
-                label={serverMuted ? "Unmute server" : "Mute server"}
-                onClick={() => {
-                  setServerMenuOpen(false);
-                  onMuteServer(!serverMuted);
-                }}
-              />
+            {(onSetServerNotif || onMuteServer) && (
+              <>
+                <div className="my-1 border-t border-border" />
+                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                  Notifications
+                </p>
+                {(
+                  [
+                    ["all", "All messages"],
+                    ["mentions", "Mentions only"],
+                    ["nothing", "Nothing"],
+                  ] as const
+                ).map(([level, label]) => (
+                  <MenuItem
+                    key={level}
+                    label={`${serverNotifLevel === level || (level === "nothing" && serverMuted && !onSetServerNotif) ? "✓ " : ""}${label}`}
+                    onClick={() => {
+                      setServerMenuOpen(false);
+                      if (onSetServerNotif) onSetServerNotif(level);
+                      else if (onMuteServer) onMuteServer(level === "nothing");
+                    }}
+                  />
+                ))}
+              </>
             )}
             <div className="my-1 border-t border-border" />
             <Link
@@ -234,7 +260,13 @@ export function ChannelList({
           {textChannels.map((channel) => {
             const active = channel.id === activeChannelId;
             const unread = unreadChannels?.has(channel.id);
-            const muted = mutedChannels?.has(channel.id);
+            const muted =
+              (channelNotifLevels[channel.id] ??
+                (mutedChannels?.has(channel.id) ? "nothing" : undefined)) ===
+              "nothing";
+            const notif =
+              channelNotifLevels[channel.id] ??
+              (mutedChannels?.has(channel.id) ? "nothing" : undefined);
             return (
               <li key={channel.id}>
                 <Link
@@ -255,7 +287,12 @@ export function ChannelList({
                   )}
                   <span className="text-text-muted">#</span>
                   <span className="truncate">{channel.name}</span>
-                  {muted && (
+                  {notif && notif !== "all" && (
+                    <span className="ml-auto text-[9px] uppercase text-text-muted">
+                      {notif === "mentions" ? "@" : "muted"}
+                    </span>
+                  )}
+                  {muted && !notif && (
                     <span className="ml-auto text-[9px] uppercase text-text-muted">
                       muted
                     </span>
@@ -338,7 +375,7 @@ export function ChannelList({
         </ul>
       </div>
 
-      {menu && onMuteChannel && (
+      {menu && (onMuteChannel || onSetChannelNotif) && (
         <>
           <button
             type="button"
@@ -347,22 +384,39 @@ export function ChannelList({
             onClick={() => setMenu(null)}
           />
           <div
-            className="fixed z-[61] min-w-[160px] overflow-hidden rounded-lg border border-border bg-bg-elevated py-1 shadow-xl"
+            className="fixed z-[61] min-w-[180px] overflow-hidden rounded-lg border border-border bg-bg-elevated py-1 shadow-xl"
             style={{ left: menu.x, top: menu.y }}
           >
-            <button
-              type="button"
-              className="block w-full px-3 py-1.5 text-left text-xs text-text-secondary hover:bg-bg-hover hover:text-text"
-              onClick={() => {
-                const muted = mutedChannels?.has(menu.channelId);
-                onMuteChannel(menu.channelId, !muted);
-                setMenu(null);
-              }}
-            >
-              {mutedChannels?.has(menu.channelId)
-                ? "Unmute Channel"
-                : "Mute Channel"}
-            </button>
+            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+              Notifications
+            </p>
+            {(
+              [
+                ["all", "All messages"],
+                ["mentions", "Mentions only"],
+                ["nothing", "Nothing"],
+              ] as const
+            ).map(([level, label]) => {
+              const current =
+                channelNotifLevels[menu.channelId] ??
+                (mutedChannels?.has(menu.channelId) ? "nothing" : "all");
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  className="block w-full px-3 py-1.5 text-left text-xs text-text-secondary hover:bg-bg-hover hover:text-text"
+                  onClick={() => {
+                    if (onSetChannelNotif) onSetChannelNotif(menu.channelId, level);
+                    else if (onMuteChannel)
+                      onMuteChannel(menu.channelId, level === "nothing");
+                    setMenu(null);
+                  }}
+                >
+                  {current === level ? "✓ " : ""}
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </>
       )}

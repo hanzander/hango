@@ -11,6 +11,8 @@ type UserProfilePopoutProps = {
   onClose: () => void;
   isOwner?: boolean;
   isSelf?: boolean;
+  canKick?: boolean;
+  canManageRoles?: boolean;
   roles?: ServerRole[];
   assignedRoleIds?: string[];
   onAssignRole?: (userId: string, roleId: string) => void | Promise<void>;
@@ -40,6 +42,8 @@ export function UserProfilePopout({
   onClose,
   isOwner,
   isSelf,
+  canKick,
+  canManageRoles,
   roles = [],
   assignedRoleIds = [],
   onAssignRole,
@@ -50,6 +54,8 @@ export function UserProfilePopout({
 }: UserProfilePopoutProps) {
   const [busyRole, setBusyRole] = useState<string | null>(null);
   const assigned = new Set(assignedRoleIds);
+  const allowRoles = Boolean((canManageRoles ?? isOwner) && !isSelf);
+  const allowKick = Boolean((canKick ?? isOwner) && !isSelf);
 
   useEffect(() => {
     if (!open) return;
@@ -67,11 +73,10 @@ export function UserProfilePopout({
   if (!open || !profile) return null;
 
   const status = profile.status ?? "online";
-  const canModerate = Boolean(isOwner && !isSelf);
-  const showRoles = roles.length > 0 || canModerate;
+  const showRoles = roles.length > 0 || allowRoles;
 
   async function toggleRole(roleId: string) {
-    if (!canModerate || busyRole) return;
+    if (!allowRoles || busyRole) return;
     setBusyRole(roleId);
     try {
       if (assigned.has(roleId)) {
@@ -154,7 +159,7 @@ export function UserProfilePopout({
               <div className="mt-3 border-t border-border pt-3">
                 <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
                   Roles
-                  {canModerate ? " · tap to toggle" : ""}
+                  {allowRoles ? " · tap to toggle" : ""}
                 </p>
                 {roles.length === 0 ? (
                   <p className="text-xs text-text-muted">
@@ -169,10 +174,10 @@ export function UserProfilePopout({
                         <button
                           key={role.id}
                           type="button"
-                          disabled={!canModerate || busy}
+                          disabled={!allowRoles || busy}
                           onClick={() => void toggleRole(role.id)}
                           title={
-                            canModerate
+                            allowRoles
                               ? on
                                 ? `Remove ${role.name}`
                                 : `Give ${role.name}`
@@ -183,9 +188,9 @@ export function UserProfilePopout({
                             on
                               ? "border-transparent bg-bg-hover text-text"
                               : "border-border text-text-muted",
-                            canModerate &&
+                            allowRoles &&
                               "hover:scale-[1.03] hover:border-border-strong hover:text-text active:scale-[0.98]",
-                            !canModerate && "cursor-default",
+                            !allowRoles && "cursor-default",
                             busy && "opacity-60",
                           )}
                         >
@@ -194,7 +199,7 @@ export function UserProfilePopout({
                             style={{ background: role.color || "#57F287" }}
                           />
                           {role.name}
-                          {canModerate && (
+                          {allowRoles && (
                             <span className="text-[10px] text-text-muted">
                               {on ? "✓" : "+"}
                             </span>
@@ -219,7 +224,7 @@ export function UserProfilePopout({
                   }}
                 />
               )}
-              {canModerate && onTimeout && (
+              {allowKick && onTimeout && (
                 <ActionButton
                   label="Timeout 10 minutes"
                   onClick={() => {
@@ -228,7 +233,7 @@ export function UserProfilePopout({
                   }}
                 />
               )}
-              {canModerate && onKick && (
+              {allowKick && onKick && (
                 <ActionButton
                   label="Kick from server"
                   danger

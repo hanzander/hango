@@ -30,6 +30,12 @@ import {
   notifyDesktop,
 } from "@/lib/desktop-notify";
 import { useIdleStatus } from "@/hooks/useIdleStatus";
+import {
+  isNotificationLevel,
+  messageMentionsMe,
+  resolveNotificationLevel,
+  type NotificationLevel,
+} from "@/lib/permissions";
 
 type ChatWorkspaceProps = {
   serverId?: string;
@@ -79,6 +85,12 @@ export function ChatWorkspace({
   const [typingNames, setTypingNames] = useState<string[]>([]);
   const [mutedChannels, setMutedChannels] = useState<Set<string>>(new Set());
   const [mutedServers, setMutedServers] = useState<Set<string>>(new Set());
+  const [channelNotifLevels, setChannelNotifLevels] = useState<
+    Record<string, NotificationLevel>
+  >({});
+  const [serverNotifLevels, setServerNotifLevels] = useState<
+    Record<string, NotificationLevel>
+  >({});
   const [unreadChannels, setUnreadChannels] = useState<Set<string>>(new Set());
   const [compact, setCompact] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -268,10 +280,10 @@ export function ChatWorkspace({
 
       const { data: channelMuteRows } = await supabase
         .from("channel_mutes")
-        .select("channel_id");
+        .select("channel_id, notification_level");
       const { data: serverMuteRows } = await supabase
         .from("server_mutes")
-        .select("server_id");
+        .select("server_id, notification_level");
       // Mute tables may not exist until migration 005 — ignore errors
 
       if (cancelled) return;
@@ -285,12 +297,31 @@ export function ChatWorkspace({
       );
       setServers(serverRows);
       setChannels(channelRows);
-      setMutedChannels(
-        new Set((channelMuteRows ?? []).map((r) => r.channel_id as string)),
-      );
-      setMutedServers(
-        new Set((serverMuteRows ?? []).map((r) => r.server_id as string)),
-      );
+
+      const chLevels: Record<string, NotificationLevel> = {};
+      const chMuted = new Set<string>();
+      for (const row of channelMuteRows ?? []) {
+        const id = row.channel_id as string;
+        const level = isNotificationLevel(row.notification_level)
+          ? row.notification_level
+          : "nothing";
+        chLevels[id] = level;
+        if (level === "nothing") chMuted.add(id);
+      }
+      const srvLevels: Record<string, NotificationLevel> = {};
+      const srvMuted = new Set<string>();
+      for (const row of serverMuteRows ?? []) {
+        const id = row.server_id as string;
+        const level = isNotificationLevel(row.notification_level)
+          ? row.notification_level
+          : "nothing";
+        srvLevels[id] = level;
+        if (level === "nothing") srvMuted.add(id);
+      }
+      setChannelNotifLevels(chLevels);
+      setServerNotifLevels(srvLevels);
+      setMutedChannels(chMuted);
+      setMutedServers(srvMuted);
       setBootstrapped(true);
     }
 
@@ -552,7 +583,6 @@ export function ChatWorkspace({
     const supabase = createClient();
     const myId = profile.id;
     const myName = profile.display_name;
-    const serverMuted = mutedServers.has(activeServer.id);
 
     const channel = supabase
       .channel(`server-chat-notify:${activeServer.id}`)
@@ -573,17 +603,23 @@ export function ChatWorkspace({
             setUnreadChannels((prev) => new Set(prev).add(row.channel_id));
           }
 
-          if (serverMuted || mutedChannels.has(row.channel_id)) return;
+          const level = resolveNotificationLevel(
+            serverNotifLevels[activeServer.id],
+            channelNotifLevels[row.channel_id],
+            mutedServers.has(activeServer.id),
+            mutedChannels.has(row.channel_id),
+          );
+          if (level === "nothing") return;
 
+          const mentioned = messageMentionsMe(row.content, myName);
+          if (level === "mentions" && !mentioned) return;
+
+          // Legacy global toggle (UserBar) still respected if set
           const mentionsOnly =
             typeof window !== "undefined" &&
             localStorage.getItem("hango-mentions-only") === "1";
-          const mentioned =
-            row.content.includes(`@${myName}`) ||
-            row.content.includes("@everyone") ||
-            row.content.includes("@here");
+          if (mentionsOnly && level === "all" && !mentioned) return;
 
-          if (mentionsOnly && !mentioned) return;
           playMessageNotification();
           void ensureNotificationPermission().then((perm) => {
             if (perm !== "granted") return;
@@ -608,6 +644,8 @@ export function ChatWorkspace({
     profile?.display_name,
     mutedChannels,
     mutedServers,
+    channelNotifLevels,
+    serverNotifLevels,
   ]);
 
   const handleSend = useCallback(
@@ -1089,60 +1127,121 @@ export function ChatWorkspace({
     [activeServer, configured, router, toast],
   );
 
-  const handleMuteChannel = useCallback(
-    async (channelIdToMute: string, mute: boolean) => {
+  const handleSetChannelNotif = useCallback(
+    async (channelIdToSet: string, level: NotificationLevel) => {
       if (!profile || !configured) return;
       const supabase = createClient();
-      if (mute) {
-        await supabase.from("channel_mutes").upsert({
-          user_id: profile.id,
-          channel_id: channelIdToMute,
-        });
-        setMutedChannels((prev) => new Set(prev).add(channelIdToMute));
-        toast("Channel muted");
-      } else {
+      if (level === "all") {
         await supabase
           .from("channel_mutes")
           .delete()
           .eq("user_id", profile.id)
-          .eq("channel_id", channelIdToMute);
-        setMutedChannels((prev) => {
-          const next = new Set(prev);
-          next.delete(channelIdToMute);
+          .eq("channel_id", channelIdToSet);
+        setChannelNotifLevels((prev) => {
+          const next = { ...prev };
+          delete next[channelIdToSet];
           return next;
         });
-        toast("Channel unmuted");
+        setMutedChannels((prev) => {
+          const next = new Set(prev);
+          next.delete(channelIdToSet);
+          return next;
+        });
+        toast("Channel notifications: all");
+        return;
       }
+      const { error } = await supabase.from("channel_mutes").upsert({
+        user_id: profile.id,
+        channel_id: channelIdToSet,
+        notification_level: level,
+      });
+      if (error) {
+        await supabase.from("channel_mutes").upsert({
+          user_id: profile.id,
+          channel_id: channelIdToSet,
+        });
+      }
+      setChannelNotifLevels((prev) => ({ ...prev, [channelIdToSet]: level }));
+      setMutedChannels((prev) => {
+        const next = new Set(prev);
+        if (level === "nothing") next.add(channelIdToSet);
+        else next.delete(channelIdToSet);
+        return next;
+      });
+      toast(
+        level === "mentions"
+          ? "Channel: mentions only"
+          : "Channel notifications off",
+      );
     },
     [profile, configured, toast],
   );
 
-  const handleMuteServer = useCallback(
-    async (mute: boolean) => {
+  const handleSetServerNotif = useCallback(
+    async (level: NotificationLevel) => {
       if (!profile || !configured || !activeServer) return;
       const supabase = createClient();
-      if (mute) {
-        await supabase.from("server_mutes").upsert({
-          user_id: profile.id,
-          server_id: activeServer.id,
-        });
-        setMutedServers((prev) => new Set(prev).add(activeServer.id));
-        toast("Server muted");
-      } else {
+      if (level === "all") {
         await supabase
           .from("server_mutes")
           .delete()
           .eq("user_id", profile.id)
           .eq("server_id", activeServer.id);
+        setServerNotifLevels((prev) => {
+          const next = { ...prev };
+          delete next[activeServer.id];
+          return next;
+        });
         setMutedServers((prev) => {
           const next = new Set(prev);
           next.delete(activeServer.id);
           return next;
         });
-        toast("Server unmuted");
+        toast("Server notifications: all");
+        return;
       }
+      const { error } = await supabase.from("server_mutes").upsert({
+        user_id: profile.id,
+        server_id: activeServer.id,
+        notification_level: level,
+      });
+      if (error) {
+        await supabase.from("server_mutes").upsert({
+          user_id: profile.id,
+          server_id: activeServer.id,
+        });
+      }
+      setServerNotifLevels((prev) => ({
+        ...prev,
+        [activeServer.id]: level,
+      }));
+      setMutedServers((prev) => {
+        const next = new Set(prev);
+        if (level === "nothing") next.add(activeServer.id);
+        else next.delete(activeServer.id);
+        return next;
+      });
+      toast(
+        level === "mentions"
+          ? "Server: mentions only"
+          : "Server notifications off",
+      );
     },
     [profile, configured, activeServer, toast],
+  );
+
+  const handleMuteChannel = useCallback(
+    async (channelIdToMute: string, mute: boolean) => {
+      await handleSetChannelNotif(channelIdToMute, mute ? "nothing" : "all");
+    },
+    [handleSetChannelNotif],
+  );
+
+  const handleMuteServer = useCallback(
+    async (mute: boolean) => {
+      await handleSetServerNotif(mute ? "nothing" : "all");
+    },
+    [handleSetServerNotif],
   );
 
   const handleSignOut = useCallback(async () => {
@@ -1352,6 +1451,13 @@ export function ChatWorkspace({
       onCreateChannel={handleCreateChannel}
       onMuteChannel={handleMuteChannel}
       onMuteServer={handleMuteServer}
+      onSetChannelNotif={handleSetChannelNotif}
+      onSetServerNotif={handleSetServerNotif}
+      channelNotifLevels={channelNotifLevels}
+      serverNotifLevel={
+        serverNotifLevels[activeServer.id] ??
+        (mutedServers.has(activeServer.id) ? "nothing" : "all")
+      }
       onToggleCompact={handleToggleCompact}
       onSearchChange={setSearchQuery}
       onTogglePins={() => {

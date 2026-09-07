@@ -39,6 +39,15 @@ import {
   warmDeviceCache,
   ensureMicAccess,
 } from "@/lib/media-devices";
+import {
+  getNoiseSuppression,
+  setNoiseSuppression,
+  getStickyDevice,
+  setStickyDevice,
+  pickStickyDevice,
+  micCaptureOpts,
+} from "@/lib/voice-prefs";
+import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/utils";
 
 type CallOverlayProps = {
@@ -69,22 +78,21 @@ type PeerSnapshot = {
   screenOn: boolean;
 };
 
-const MIC_OPTS = {
-  echoCancellation: true,
-  // noiseSuppression is CPU-heavy and was locking the tab for some users
-  noiseSuppression: false,
-  autoGainControl: true,
-} as const;
-
 const CAM_OPTS = {
   resolution: VideoPresets.h360.resolution,
 } as const;
 
 /** Try LiveKit mic with constraints, then bare enable (friends hit NotFound on strict opts). */
 async function enableMicrophone(room: Room, deviceId?: string) {
+  const preferred =
+    deviceId ||
+    getStickyDevice("audioinput") ||
+    room.getActiveDevice("audioinput") ||
+    undefined;
   const attempts: (MediaTrackConstraints | undefined)[] = [
-    deviceId ? { ...MIC_OPTS, deviceId } : { ...MIC_OPTS },
-    deviceId ? { deviceId } : undefined,
+    micCaptureOpts(preferred || undefined),
+    preferred ? { deviceId: preferred } : undefined,
+    micCaptureOpts(),
     {},
   ];
   let lastErr: unknown;
@@ -95,6 +103,8 @@ async function enableMicrophone(room: Room, deviceId?: string) {
       } else {
         await room.localParticipant.setMicrophoneEnabled(true, opts);
       }
+      const active = room.getActiveDevice("audioinput");
+      if (active) setStickyDevice("audioinput", active);
       return;
     } catch (err) {
       lastErr = err;
@@ -210,6 +220,13 @@ export function CallOverlay({
   const [speakingIds, setSpeakingIds] = useState<string[]>([]);
   const [boardOpen, setBoardOpen] = useState(false);
   const [boardReady, setBoardReady] = useState(true);
+  const [noiseSuppression, setNoiseSuppressionState] = useState(false);
+  const { toast } = useToast();
+  const wasReconnecting = useRef(false);
+
+  useEffect(() => {
+    setNoiseSuppressionState(getNoiseSuppression());
+  }, []);
 
   const roomRef = useRef<Room | null>(null);
   const audioHostRef = useRef<HTMLDivElement | null>(null);
@@ -264,7 +281,11 @@ export function CallOverlay({
       adaptiveStream: false,
       dynacast: false,
       stopLocalTrackOnUnpublish: true,
-      audioCaptureDefaults: { ...MIC_OPTS },
+      audioCaptureDefaults: {
+        echoCancellation: true,
+        noiseSuppression: getNoiseSuppression(),
+        autoGainControl: true,
+      },
     });
     roomRef.current = room;
     setRoom(room);
@@ -372,6 +393,10 @@ export function CallOverlay({
           setStatus("live");
           setConnLabel("Voice Connected");
           setDeviceHint((prev) => (prev === CONNECTING_HINT ? null : prev));
+          if (wasReconnecting.current) {
+            wasReconnecting.current = false;
+            toast("Voice reconnected", "success");
+          }
           onConnectedRef.current?.();
           schedulePeers();
           knownRemotes.current = new Set(room.remoteParticipants.keys());
@@ -379,6 +404,8 @@ export function CallOverlay({
           setConnLabel("Connecting…");
         } else if (state === ConnectionState.Reconnecting) {
           setConnLabel("Reconnecting…");
+          wasReconnecting.current = true;
+          toast("Reconnecting to voice…");
         } else if (
           state === ConnectionState.Disconnected &&
           !intentionalLeave.current
@@ -386,6 +413,7 @@ export function CallOverlay({
           setStatus("error");
           setConnLabel("Disconnected");
           setError("Disconnected from the call.");
+          toast("Disconnected from voice", "danger");
           onDisconnectedRef.current?.();
         }
       });
@@ -424,7 +452,8 @@ export function CallOverlay({
         if (cancelled) return;
 
         try {
-          await enableMicrophoneWithRetry(room);
+          const stickyMic = getStickyDevice("audioinput") || undefined;
+          await enableMicrophoneWithRetry(room, stickyMic);
           setMicOn(true);
           setNeedsMicAllow(false);
           setDeviceHint(null);
@@ -534,6 +563,26 @@ export function CallOverlay({
       } catch {
         /* ignore */
       }
+    }
+  }
+
+  async function toggleNoiseSuppression() {
+    const next = !noiseSuppression;
+    setNoiseSuppression(next);
+    setNoiseSuppressionState(next);
+    const r = roomRef.current;
+    if (r?.localParticipant.isMicrophoneEnabled) {
+      try {
+        await enableMicrophoneWithRetry(
+          r,
+          r.getActiveDevice("audioinput") || undefined,
+        );
+        toast(next ? "Noise suppression on" : "Noise suppression off");
+      } catch {
+        toast("Couldn’t apply noise suppression", "danger");
+      }
+    } else {
+      toast(next ? "Noise suppression on" : "Noise suppression off");
     }
   }
 
@@ -1104,6 +1153,24 @@ export function CallOverlay({
           />
           <button
             type="button"
+            title={
+              noiseSuppression
+                ? "Noise suppression on"
+                : "Noise suppression off"
+            }
+            disabled={!room || mediaBusy}
+            onClick={() => void toggleNoiseSuppression()}
+            className={cn(
+              "flex h-12 w-11 items-center justify-center rounded-full text-[10px] font-bold transition-colors disabled:opacity-50",
+              noiseSuppression
+                ? "bg-emerald-500/25 text-emerald-300"
+                : "bg-white/10 text-white/70 hover:bg-white/15",
+            )}
+          >
+            NS
+          </button>
+          <button
+            type="button"
             title={deafened ? "Undeafen" : "Deafen"}
             disabled={!room || mediaBusy}
             onClick={() => void toggleDeafen()}
@@ -1616,11 +1683,8 @@ function DeviceMenu({
         if (list.length > 0) {
           setDevices(list);
           const current = room.getActiveDevice(kind);
-          setActiveId(
-            current && list.some((d) => d.deviceId === current)
-              ? current
-              : list[0].deviceId,
-          );
+          const preferred = pickStickyDevice(kind, list, current);
+          setActiveId(preferred ?? list[0].deviceId);
         }
       } catch (err) {
         if (alive) {
@@ -1643,6 +1707,7 @@ function DeviceMenu({
     try {
       await room.switchActiveDevice(kind, deviceId, true);
       setActiveId(deviceId);
+      setStickyDevice(kind, deviceId);
 
       if (kind === "audioinput") {
         await enableMicrophone(room, deviceId);

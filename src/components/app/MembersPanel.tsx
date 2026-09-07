@@ -22,6 +22,8 @@ type MembersPanelProps = {
   speakingIds?: string[];
   currentUserId?: string;
   isOwner?: boolean;
+  canKick?: boolean;
+  canManageRoles?: boolean;
   roles?: ServerRole[];
   memberRoleIds?: Record<string, string[]>;
   onOpenProfile?: (userId: string) => void;
@@ -47,6 +49,8 @@ export function MembersPanel({
   speakingIds = [],
   currentUserId,
   isOwner,
+  canKick,
+  canManageRoles,
   roles = [],
   memberRoleIds = {},
   onOpenProfile,
@@ -56,6 +60,8 @@ export function MembersPanel({
   onRemoveRole,
   onMessageUser,
 }: MembersPanelProps) {
+  const allowKick = canKick ?? isOwner;
+  const allowRoles = canManageRoles ?? isOwner;
   const speaking = useMemo(() => new Set(speakingIds), [speakingIds]);
   const rolesById = useMemo(
     () => new Map(roles.map((r) => [r.id, r])),
@@ -125,7 +131,7 @@ export function MembersPanel({
         onClick: () => onMessageUser?.(m.user_id),
       });
     }
-    if (isOwner && m.user_id !== currentUserId) {
+    if (allowRoles && m.user_id !== currentUserId) {
       for (const role of roles) {
         const has = m.roleIds.includes(role.id);
         items.push({
@@ -136,6 +142,8 @@ export function MembersPanel({
               : onAssignRole?.(m.user_id, role.id),
         });
       }
+    }
+    if (allowKick && m.user_id !== currentUserId) {
       items.push({
         label: "Timeout 10m",
         onClick: () => onTimeout?.(m.user_id, 10),
