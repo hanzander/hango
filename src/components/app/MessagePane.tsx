@@ -266,7 +266,7 @@ export function MessagePane({
             </p>
           </div>
         ) : (
-          <ul className={cn(compact ? "space-y-0.5" : "space-y-3")}>
+          <ul className={cn(compact ? "space-y-0" : "space-y-0")}>
             {visible.map((message, i) => {
               const prev = visible[i - 1];
               const showDate =
@@ -283,8 +283,8 @@ export function MessagePane({
                   {showDate && (
                     <div
                       className={cn(
-                        "mb-3 flex items-center gap-3",
-                        i > 0 && "mt-5",
+                        "mb-2 flex items-center gap-3",
+                        i > 0 && "mt-4",
                       )}
                       role="separator"
                       aria-label={formatMessageDateDivider(message.created_at)}
@@ -451,28 +451,32 @@ function MessageRow({
   return (
     <div
       className={cn(
-        "hango-msg group relative flex gap-3 rounded-xl px-2 py-1 transition-colors duration-150 hover:bg-white/[0.035]",
-        grouped && !compact && "-mt-0.5",
-        compact && "py-0.5",
+        "hango-msg group relative grid grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-x-3 rounded-xl px-2 py-0.5 transition-colors duration-150 hover:bg-white/[0.035]",
+        compact && "grid-cols-[2rem_minmax(0,1fr)] py-0.5",
+        grouped && !compact && "mt-0",
+        !grouped && !compact && "mt-2",
         message.pinned_at && "bg-amber-500/[0.05]",
       )}
+      style={{ alignItems: "start" }}
     >
-      {!grouped ? (
-        <button
-          type="button"
-          onClick={onOpenProfile}
-          className="shrink-0 pt-0.5 transition hover:opacity-90"
-        >
-          <Avatar
-            name={name}
-            src={message.author?.avatar_url}
-            size={compact ? "sm" : "md"}
-          />
-        </button>
-      ) : (
-        <div className={cn("shrink-0", compact ? "w-8" : "w-10")} />
-      )}
-      <div className="min-w-0 flex-1">
+      <div className="self-start pt-0.5">
+        {!grouped ? (
+          <button
+            type="button"
+            onClick={onOpenProfile}
+            className="block h-10 w-10 shrink-0 overflow-hidden rounded-full p-0 leading-none transition hover:opacity-90"
+          >
+            <Avatar
+              name={name}
+              src={message.author?.avatar_url}
+              size={compact ? "sm" : "md"}
+            />
+          </button>
+        ) : (
+          <div className={compact ? "h-8 w-8" : "h-10 w-10"} aria-hidden />
+        )}
+      </div>
+      <div className="min-w-0">
         {message.reply_to && (
           <button
             type="button"
@@ -489,32 +493,30 @@ function MessageRow({
           </button>
         )}
         {!grouped && (
-          <div className="mb-0.5">
-            <div className="flex items-baseline gap-2">
-              <button
-                type="button"
-                onClick={onOpenProfile}
-                className="text-[15px] font-semibold text-text hover:underline"
-              >
-                {name}
-              </button>
-              <time className="text-[11px] text-text-muted">
-                {formatMessageTime(message.created_at)}
-              </time>
-              {message.edited_at && (
-                <span className="text-[10px] text-text-muted">(edited)</span>
-              )}
-              {message.pinned_at && (
-                <span className="text-[10px] text-amber-300/90">Pinned</span>
-              )}
-            </div>
-            {message.author?.custom_status ? (
-              <p className="mt-0.5 truncate text-[11px] leading-snug text-text-muted">
-                {message.author.custom_status}
-              </p>
-            ) : null}
+          <div className="mb-0.5 flex h-5 items-baseline gap-2 leading-none">
+            <button
+              type="button"
+              onClick={onOpenProfile}
+              className="text-[15px] font-semibold leading-5 text-text hover:underline"
+            >
+              {name}
+            </button>
+            <time className="text-[11px] leading-5 text-text-muted">
+              {formatMessageTime(message.created_at)}
+            </time>
+            {message.edited_at && (
+              <span className="text-[10px] text-text-muted">(edited)</span>
+            )}
+            {message.pinned_at && (
+              <span className="text-[10px] text-amber-300/90">Pinned</span>
+            )}
           </div>
         )}
+        {!grouped && message.author?.custom_status ? (
+          <p className="mb-0.5 truncate text-[11px] leading-snug text-text-muted">
+            {message.author.custom_status}
+          </p>
+        ) : null}
 
         {editing ? (
           <div className="mt-1 space-y-2">

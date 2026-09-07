@@ -110,6 +110,11 @@ html[data-density="compact"] .hango-msg {
   padding-bottom: 0.125rem;
 }
 
+/* Avatars must stay top-aligned with the name, never centered on tall media */
+.hango-msg {
+  align-items: start !important;
+}
+
 /* —— Motion —— */
 @keyframes hango-fade {
   from {
