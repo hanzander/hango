@@ -69,20 +69,12 @@ export default async function HomePage() {
         >
           hango
         </Link>
-        <nav className="flex items-center gap-5">
-          <Link
-            href="/app/demo"
-            className="hidden text-sm text-text-muted transition-colors hover:text-text sm:inline"
-          >
-            Demo
-          </Link>
-          <Link
-            href="/login"
-            className="text-sm text-text-secondary transition-colors hover:text-text"
-          >
-            Sign in
-          </Link>
-        </nav>
+        <Link
+          href="/login"
+          className="text-sm text-text-secondary transition-colors hover:text-text"
+        >
+          Sign in
+        </Link>
       </header>
 
       <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-col px-6 pb-20 pt-10 md:pt-16">
@@ -111,12 +103,6 @@ export default async function HomePage() {
               className="hango-interactive inline-flex rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg"
             >
               Get started
-            </Link>
-            <Link
-              href="/app/demo"
-              className="hango-interactive inline-flex rounded-lg border border-border-strong bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text-secondary transition-colors hover:border-text-muted hover:text-text"
-            >
-              Try the demo
             </Link>
           </div>
         </div>
