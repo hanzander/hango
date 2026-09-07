@@ -7,6 +7,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -361,18 +362,27 @@ export function AppShell({
     [demo, localProfile, serverMembers],
   );
 
-  const joinVoice = useCallback(() => {
-    if ((channel.kind ?? "text") !== "voice") return;
-    unlockAudio();
-    playJoinSound();
-    // Don't call ensureMicAccess here — it races CallOverlay (opens mic,
-    // stops tracks, then LiveKit fails and shows "Allow microphone" every join).
-    // Mic is enabled inside CallOverlay after the room connects.
-    void refreshMediaDevices("audioinput");
-    void refreshMediaDevices("audiooutput");
-    setCallConnected(false);
-    setVoiceSession({ channelId: channel.id, channelName: channel.name });
-  }, [channel.id, channel.kind, channel.name]);
+  const voiceSessionRef = useRef(voiceSession);
+  voiceSessionRef.current = voiceSession;
+
+  const joinVoice = useCallback(
+    (target?: Pick<Channel, "id" | "name" | "kind">) => {
+      const ch = target ?? channel;
+      if ((ch.kind ?? "text") !== "voice") return;
+      const prev = voiceSessionRef.current;
+      if (prev?.channelId === ch.id) return;
+
+      unlockAudio();
+      playJoinSound();
+      // Mic is enabled inside CallOverlay after the room connects.
+      void refreshMediaDevices("audioinput");
+      void refreshMediaDevices("audiooutput");
+      setCallConnected(false);
+      if (prev) setCallKey((k) => k + 1);
+      setVoiceSession({ channelId: ch.id, channelName: ch.name });
+    },
+    [channel],
+  );
 
   const disconnectVoice = useCallback(() => {
     playLeaveSound();
@@ -576,6 +586,7 @@ export function AppShell({
             onEditTopic={
               demo || isVoice ? undefined : () => setTopicEdit(true)
             }
+            onJoinVoice={demo ? undefined : (ch) => joinVoice(ch)}
           />
           {inCall && voiceSession && !demo && (
             <VoiceConnectedBar
@@ -711,12 +722,12 @@ export function AppShell({
                     <p className="mt-1 text-sm text-text-muted">
                       {occupants > 0
                         ? `${occupants} already here`
-                        : "Ready when you are"}
+                        : "Click this channel in the sidebar to join"}
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={joinVoice}
+                    onClick={() => joinVoice()}
                     className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-medium text-black transition-colors hover:bg-emerald-400"
                   >
                     Join voice

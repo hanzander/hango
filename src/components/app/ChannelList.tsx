@@ -29,6 +29,7 @@ type ChannelListProps = {
   onOpenInvite?: () => void;
   onMarkRead?: () => void;
   onEditTopic?: () => void;
+  onJoinVoice?: (channel: Channel) => void;
 };
 
 export function ChannelList({
@@ -53,6 +54,7 @@ export function ChannelList({
   onOpenInvite,
   onMarkRead,
   onEditTopic,
+  onJoinVoice,
 }: ChannelListProps) {
   const [copied, setCopied] = useState(false);
   const [serverMenuOpen, setServerMenuOpen] = useState(false);
@@ -290,7 +292,10 @@ export function ChannelList({
               <li key={channel.id}>
                 <Link
                   href={hrefForChannel(channel)}
-                  onClick={onCloseMobile}
+                  onClick={() => {
+                    onCloseMobile?.();
+                    onJoinVoice?.(channel);
+                  }}
                   className={cn(
                     "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-text-secondary transition-colors hover:bg-bg-hover hover:text-text",
                     active && "bg-emerald-500/10 text-emerald-300",
