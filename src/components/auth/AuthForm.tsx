@@ -10,6 +10,7 @@ import {
   loadRememberedEmails,
   rememberEmail,
 } from "@/lib/remembered-accounts";
+import { armAuthCover } from "@/lib/auth-cover";
 import { AuthMoment, type AuthMomentKind } from "./AuthMoment";
 import { cn } from "@/lib/utils";
 
@@ -221,6 +222,7 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
   const [moment, setMoment] = useState<AuthMomentKind | null>(null);
   const [remembered, setRemembered] = useState<string[]>([]);
   const destRef = useRef("/app");
+  const momentKindRef = useRef<AuthMomentKind>("welcome");
 
   const configured = isSupabaseConfigured();
 
@@ -235,9 +237,8 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
   }, [mode]);
 
   const finishMoment = useCallback(() => {
-    const dest = destRef.current;
-    setMoment(null);
-    router.push(dest);
+    armAuthCover(momentKindRef.current);
+    router.push(destRef.current);
     router.refresh();
   }, [router]);
 
@@ -278,6 +279,7 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
 
         if (data.session) {
           destRef.current = await routeAfterAuth(supabase, "/onboarding");
+          momentKindRef.current = "welcome-new";
           setMoment("welcome-new");
           return;
         }
@@ -308,6 +310,7 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
       rememberEmail(cleanEmail);
       setRemembered(loadRememberedEmails());
       destRef.current = await routeAfterAuth(supabase, nextPath);
+      momentKindRef.current = "welcome";
       setMoment("welcome");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

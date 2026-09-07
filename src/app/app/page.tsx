@@ -44,6 +44,7 @@ export default async function AppIndexPage() {
     <AppHome
       displayName={profile.display_name ?? "User"}
       avatarUrl={profile.avatar_url}
+      userId={user.id}
       servers={servers}
     />
   );

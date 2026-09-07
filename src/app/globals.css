@@ -234,7 +234,18 @@ html[data-density="compact"] .hango-msg {
     padding 0.28s ease;
 }
 
-/* Landing */
+html.hango-auth-covering::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  pointer-events: all;
+  background: var(--bg);
+}
+
+html.hango-auth-covering {
+  overflow: hidden;
+}
 @keyframes hango-landing-in {
   from {
     opacity: 0;

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AppearanceProvider } from "@/components/ui/Appearance";
+import { AuthCoverClearer } from "@/components/auth/AuthCoverClearer";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,6 +33,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-bg font-sans text-text antialiased">
         <AppearanceProvider>
+          <AuthCoverClearer />
           <ToastProvider>{children}</ToastProvider>
         </AppearanceProvider>
       </body>

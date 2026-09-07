@@ -283,7 +283,7 @@ export function MessageComposer({
                 active={gifOpen}
                 onClick={() => setGifOpen((v) => !v)}
               >
-                <span className="text-[10px] font-bold tracking-wide">GIF</span>
+                <IconGif />
               </ToolBtn>
               <GifPicker
                 open={gifOpen}
@@ -384,11 +384,34 @@ function ToolBtn({
       onClick={onClick}
       className={cn(
         "flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition hover:bg-bg-hover hover:text-text",
-        active && "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20 hover:text-emerald-200",
+        active && "bg-bg-hover text-text",
       )}
     >
       {children}
     </button>
+  );
+}
+
+function IconGif() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" aria-hidden>
+      <rect
+        x="3.75"
+        y="6.75"
+        width="16.5"
+        height="10.5"
+        rx="2.25"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <path
+        d="M8.2 14.2V9.8h2.35M8.2 12h1.7M13.1 9.8v4.4M15.85 14.2V9.8H18"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

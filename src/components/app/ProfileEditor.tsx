@@ -37,7 +37,7 @@ export function ProfileEditor({
   const [bio, setBio] = useState(profile.bio ?? "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { theme, density, setTheme, setDensity } = useAppearance();
+  const { theme, setTheme } = useAppearance();
 
   useEffect(() => {
     if (!open) return;
@@ -244,30 +244,6 @@ export function ProfileEditor({
                 }
               >
                 Light
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setDensity("cozy")}
-                className={
-                  density === "cozy"
-                    ? "flex-1 rounded-lg bg-accent/20 py-2 text-xs text-accent"
-                    : "flex-1 rounded-lg border border-border py-2 text-xs text-text-secondary"
-                }
-              >
-                Cozy
-              </button>
-              <button
-                type="button"
-                onClick={() => setDensity("compact")}
-                className={
-                  density === "compact"
-                    ? "flex-1 rounded-lg bg-accent/20 py-2 text-xs text-accent"
-                    : "flex-1 rounded-lg border border-border py-2 text-xs text-text-secondary"
-                }
-              >
-                Compact
               </button>
             </div>
           </div>

@@ -30,6 +30,7 @@ import {
   notifyDesktop,
 } from "@/lib/desktop-notify";
 import { useIdleStatus } from "@/hooks/useIdleStatus";
+import { armAuthCover } from "@/lib/auth-cover";
 import { AuthMoment } from "@/components/auth/AuthMoment";
 import {
   isNotificationLevel,
@@ -106,7 +107,6 @@ export function ChatWorkspace({
     Record<string, NotificationLevel>
   >({});
   const [unreadChannels, setUnreadChannels] = useState<Set<string>>(new Set());
-  const [compact, setCompact] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [pinsOnly, setPinsOnly] = useState(false);
   const [sayingBye, setSayingBye] = useState(false);
@@ -115,14 +115,6 @@ export function ChatWorkspace({
   const typingChannelRef = useRef<ReturnType<
     ReturnType<typeof createClient>["channel"]
   > | null>(null);
-
-  useEffect(() => {
-    try {
-      setCompact(localStorage.getItem("hango-compact") === "1");
-    } catch {
-      /* ignore */
-    }
-  }, []);
 
   const activeServer = useMemo(() => {
     if (!servers.length) return null;
@@ -1262,6 +1254,7 @@ export function ChatWorkspace({
   );
 
   const handleSignOut = useCallback(async () => {
+    armAuthCover("goodbye");
     if (!configured) {
       router.push("/");
       return;
@@ -1427,18 +1420,6 @@ export function ChatWorkspace({
     [router, toast],
   );
 
-  const handleToggleCompact = useCallback(() => {
-    setCompact((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem("hango-compact", next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
   if (!bootstrapped) {
     return (
       <div className="flex h-dvh items-center justify-center bg-bg text-sm text-text-muted">
@@ -1457,7 +1438,6 @@ export function ChatWorkspace({
     <>
       {sayingBye && <AuthMoment kind="goodbye" onDone={handleSignOut} />}
       <AppShell
-      servers={servers}
       server={activeServer}
       channels={serverChannels}
       channel={activeChannel}
@@ -1473,7 +1453,6 @@ export function ChatWorkspace({
       mutedChannels={mutedChannels}
       serverMuted={mutedServers.has(activeServer.id)}
       unreadChannels={unreadChannels}
-      compact={compact}
       searchQuery={searchQuery}
       pinsOnly={pinsOnly}
       onSend={handleSend}
@@ -1495,7 +1474,6 @@ export function ChatWorkspace({
         serverNotifLevels[activeServer.id] ??
         (mutedServers.has(activeServer.id) ? "nothing" : "all")
       }
-      onToggleCompact={handleToggleCompact}
       onSearchChange={setSearchQuery}
       onTogglePins={() => {
         setPinsOnly((v) => !v);
@@ -1515,30 +1493,6 @@ export function ChatWorkspace({
           ),
         )
       }
-      onServersChanged={async () => {
-        if (!configured) return;
-        const supabase = createClient();
-        const { data: memberRows } = await supabase
-          .from("server_members")
-          .select("server_id");
-        const serverIds = (memberRows ?? []).map((m) => m.server_id);
-        if (!serverIds.length) {
-          setServers([]);
-          setChannels([]);
-          return;
-        }
-        const { data: serverRows } = await supabase
-          .from("servers")
-          .select("*")
-          .in("id", serverIds);
-        const { data: channelRows } = await supabase
-          .from("channels")
-          .select("*")
-          .in("server_id", serverIds)
-          .order("position");
-        setServers((serverRows as Server[]) ?? []);
-        setChannels((channelRows as Channel[]) ?? []);
-      }}
       onSignOut={requestSignOut}
       onProfileSaved={handleProfileSaved}
     />

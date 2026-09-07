@@ -28,8 +28,6 @@ import { EmojiManager } from "./EmojiManager";
 import { ThreadsPanel } from "./ThreadsPanel";
 import { InviteSettings } from "./InviteSettings";
 import { MembersPanel, type ServerMember } from "./MembersPanel";
-import { ServerRail } from "./ServerRail";
-import { ServerActionsModal } from "./ServerActionsModal";
 import { useRouter } from "next/navigation";
 import type { ServerRole } from "@/lib/types";
 import { useServerPresence } from "@/hooks/useServerPresence";
@@ -74,7 +72,6 @@ const CallOverlay = dynamic(
 );
 
 type AppShellProps = {
-  servers?: Server[];
   server: Server;
   channels: Channel[];
   channel: Channel;
@@ -90,7 +87,6 @@ type AppShellProps = {
   mutedChannels?: Set<string>;
   serverMuted?: boolean;
   unreadChannels?: Set<string>;
-  compact?: boolean;
   searchQuery?: string;
   pinsOnly?: boolean;
   onSend: (payload: SendPayload) => Promise<void> | void;
@@ -114,7 +110,6 @@ type AppShellProps = {
   ) => Promise<void> | void;
   channelNotifLevels?: Record<string, "all" | "mentions" | "nothing">;
   serverNotifLevel?: "all" | "mentions" | "nothing";
-  onToggleCompact?: () => void;
   onSearchChange?: (q: string) => void;
   onTogglePins?: () => void;
   onMarkServerRead?: () => void;
@@ -125,7 +120,6 @@ type AppShellProps = {
   onRemoveRole?: (userId: string, roleId: string) => void | Promise<void>;
   onMessageUser?: (userId: string) => void;
   onServerUpdated?: (patch: Partial<Server>) => void;
-  onServersChanged?: () => void;
   onSignOut?: () => void;
   onProfileSaved?: (next: Profile) => void;
 };
@@ -187,7 +181,6 @@ function VoiceFrame({ children }: { children: ReactNode }) {
 }
 
 export function AppShell({
-  servers = [],
   server,
   channels,
   channel,
@@ -203,7 +196,6 @@ export function AppShell({
   mutedChannels,
   serverMuted,
   unreadChannels,
-  compact,
   searchQuery = "",
   pinsOnly = false,
   onSend,
@@ -222,7 +214,6 @@ export function AppShell({
   onSetServerNotif,
   channelNotifLevels,
   serverNotifLevel,
-  onToggleCompact,
   onSearchChange,
   onTogglePins,
   onMarkServerRead,
@@ -233,7 +224,6 @@ export function AppShell({
   onRemoveRole,
   onMessageUser,
   onServerUpdated,
-  onServersChanged,
   onSignOut,
   onProfileSaved,
 }: AppShellProps) {
@@ -259,7 +249,6 @@ export function AppShell({
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [serverActionsOpen, setServerActionsOpen] = useState(false);
   const [topicEdit, setTopicEdit] = useState(false);
   const [topicValue, setTopicValue] = useState(channel.topic ?? "");
   const [popoutProfile, setPopoutProfile] = useState<Profile | null>(null);
@@ -613,17 +602,11 @@ export function AppShell({
 
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-full w-[308px] shrink-0 transition-transform md:static md:w-auto md:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex h-full w-[240px] shrink-0 transition-transform md:static md:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <ServerRail
-          servers={servers.length ? servers : [server]}
-          activeServerId={server.id}
-          hrefForServer={(s) => (demo ? `/app/demo` : `/app/${s.id}`)}
-          onAddServer={demo ? undefined : () => setServerActionsOpen(true)}
-        />
-        <div className="hango-sidebar-wash flex h-full w-[240px] min-w-0 flex-col overflow-hidden">
+        <div className="hango-sidebar-wash flex h-full w-full min-w-0 flex-col overflow-hidden">
           <ChannelList
             server={server}
             channels={channels}
@@ -687,8 +670,6 @@ export function AppShell({
             customStatus={localCustomStatus}
             onSignOut={onSignOut}
             onOpenSettings={demo ? undefined : () => setSettingsOpen(true)}
-            onToggleCompact={onToggleCompact}
-            compact={compact}
           />
         </div>
       </div>
@@ -825,7 +806,6 @@ export function AppShell({
                 loading={loadingMessages}
                 currentUserId={userId}
                 canManageMessages={caps.canManageMessages}
-                compact={compact}
                 typingNames={typingNames}
                 searchQuery={searchQuery}
                 pinsOnly={pinsOnly}
@@ -1028,17 +1008,6 @@ export function AppShell({
           onClose={() => setInviteOpen(false)}
           server={server}
           onUpdated={(patch) => onServerUpdated?.(patch)}
-        />
-      )}
-
-      {!demo && (
-        <ServerActionsModal
-          open={serverActionsOpen}
-          onClose={() => setServerActionsOpen(false)}
-          onJoined={(serverId) => {
-            onServersChanged?.();
-            router.push(`/app/${serverId}`);
-          }}
         />
       )}
 

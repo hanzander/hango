@@ -29,9 +29,15 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const t = localStorage.getItem("hango-theme");
-      const d = localStorage.getItem("hango-density");
       if (t === "light" || t === "dark") setThemeState(t);
-      if (d === "compact" || d === "cozy") setDensityState(d);
+    } catch {
+      /* ignore */
+    }
+    // Always cozy — compact layout toggle removed
+    setDensityState("cozy");
+    try {
+      localStorage.setItem("hango-density", "cozy");
+      localStorage.removeItem("hango-compact");
     } catch {
       /* ignore */
     }
@@ -39,21 +45,22 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.density = density;
+    document.documentElement.dataset.density = "cozy";
     try {
       localStorage.setItem("hango-theme", theme);
-      localStorage.setItem("hango-density", density);
     } catch {
       /* ignore */
     }
-  }, [theme, density]);
+  }, [theme]);
 
   const setTheme = useCallback((t: ThemeMode) => setThemeState(t), []);
-  const setDensity = useCallback((d: Density) => setDensityState(d), []);
+  const setDensity = useCallback((_d: Density) => {
+    setDensityState("cozy");
+  }, []);
 
   const value = useMemo(
-    () => ({ theme, density, setTheme, setDensity }),
-    [theme, density, setTheme, setDensity],
+    () => ({ theme, density: "cozy" as const, setTheme, setDensity }),
+    [theme, setTheme, setDensity],
   );
 
   return (

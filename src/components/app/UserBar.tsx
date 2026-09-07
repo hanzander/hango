@@ -10,10 +10,8 @@ type UserBarProps = {
   avatarUrl?: string | null;
   status?: UserStatus;
   customStatus?: string | null;
-  compact?: boolean;
   onSignOut?: () => void;
   onOpenSettings?: () => void;
-  onToggleCompact?: () => void;
 };
 
 const STATUS_LABEL: Record<UserStatus, string> = {
@@ -35,10 +33,8 @@ export function UserBar({
   avatarUrl,
   status = "online",
   customStatus,
-  compact,
   onSignOut,
   onOpenSettings,
-  onToggleCompact,
 }: UserBarProps) {
   const [mentionsOnly, setMentionsOnly] = useState(() => {
     try {
@@ -76,17 +72,6 @@ export function UserBar({
       </button>
 
       <div className="flex shrink-0 items-center gap-0.5">
-        {onToggleCompact && (
-          <IconBtn
-            title={compact ? "Cozy messages" : "Compact messages"}
-            onClick={onToggleCompact}
-            active={compact}
-          >
-            <span className="text-[9px] font-bold tracking-wide">
-              {compact ? "AZ" : "az"}
-            </span>
-          </IconBtn>
-        )}
         <IconBtn
           title={
             mentionsOnly

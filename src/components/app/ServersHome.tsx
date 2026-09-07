@@ -2,16 +2,25 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Server } from "@/lib/types";
 import { initials } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import { ServerActionsModal } from "@/components/app/ServerActionsModal";
 import { Avatar } from "@/components/ui/Avatar";
 import { AuthMoment } from "@/components/auth/AuthMoment";
+import { armAuthCover } from "@/lib/auth-cover";
 
 type ServersHomeProps = {
   displayName: string;
   avatarUrl?: string | null;
+  userId: string;
   servers: Server[];
   onSignOut?: () => void | Promise<void>;
 };
@@ -19,16 +28,93 @@ type ServersHomeProps = {
 export function ServersHome({
   displayName,
   avatarUrl,
-  servers,
+  userId,
+  servers: initialServers,
   onSignOut,
 }: ServersHomeProps) {
   const router = useRouter();
+  const [servers, setServers] = useState(initialServers);
   const [open, setOpen] = useState(false);
   const [sayingBye, setSayingBye] = useState(false);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<Server | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setServers(initialServers);
+  }, [initialServers]);
+
+  useEffect(() => {
+    if (!menuId) return;
+    function onDoc(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuId(null);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuId]);
 
   const finishGoodbye = useCallback(async () => {
+    armAuthCover("goodbye");
     await onSignOut?.();
   }, [onSignOut]);
+
+  async function handleRename(e: FormEvent) {
+    e.preventDefault();
+    if (!renaming) return;
+    const name = renameValue.trim();
+    if (!name || name === renaming.name) {
+      setRenaming(null);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const supabase = createClient();
+      const { error: err } = await supabase
+        .from("servers")
+        .update({ name })
+        .eq("id", renaming.id)
+        .eq("owner_id", userId);
+      if (err) throw err;
+      setServers((prev) =>
+        prev.map((s) => (s.id === renaming.id ? { ...s, name } : s)),
+      );
+      setRenaming(null);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rename server");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete(server: Server) {
+    const ok = window.confirm(
+      `Delete “${server.name}”? This removes the server and all of its channels for everyone.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    setMenuId(null);
+    try {
+      const supabase = createClient();
+      const { error: err } = await supabase
+        .from("servers")
+        .delete()
+        .eq("id", server.id)
+        .eq("owner_id", userId);
+      if (err) throw err;
+      setServers((prev) => prev.filter((s) => s.id !== server.id));
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete server");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-bg">
@@ -102,34 +188,98 @@ export function ServersHome({
           to switch.
         </p>
 
+        {error && (
+          <p className="mt-4 text-sm text-danger" role="alert">
+            {error}
+          </p>
+        )}
+
         <div className="mt-10 grid gap-3 sm:grid-cols-2">
-          {servers.map((server, i) => (
-            <Link
-              key={server.id}
-              href={`/app/${server.id}`}
-              className="hango-server-card group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-border-strong bg-[#141312]/90 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-text-muted hover:bg-bg-subtle"
-              style={{ animationDelay: `${80 + i * 60}ms` }}
-            >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                style={{
-                  background:
-                    "radial-gradient(ellipse 80% 70% at 0% 50%, rgba(255,196,140,0.07), transparent 55%)",
-                }}
-              />
-              <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-bg-active text-sm font-medium text-text ring-1 ring-border transition-transform duration-200 group-hover:scale-[1.03]">
-                {initials(server.name)}
-              </span>
-              <div className="relative min-w-0 flex-1">
-                <p className="truncate font-medium text-text">{server.name}</p>
-                <p className="text-xs text-text-muted">Enter server</p>
+          {servers.map((server, i) => {
+            const isOwner = server.owner_id === userId;
+            return (
+              <div
+                key={server.id}
+                className="hango-server-card relative"
+                style={{ animationDelay: `${80 + i * 60}ms` }}
+              >
+                <Link
+                  href={`/app/${server.id}`}
+                  className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-border-strong bg-[#141312]/90 p-4 pr-12 transition-all duration-200 hover:-translate-y-0.5 hover:border-text-muted hover:bg-bg-subtle"
+                >
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                    style={{
+                      background:
+                        "radial-gradient(ellipse 80% 70% at 0% 50%, rgba(255,196,140,0.07), transparent 55%)",
+                    }}
+                  />
+                  <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-bg-active text-sm font-medium text-text ring-1 ring-border transition-transform duration-200 group-hover:scale-[1.03]">
+                    {initials(server.name)}
+                  </span>
+                  <div className="relative min-w-0 flex-1">
+                    <p className="truncate font-medium text-text">
+                      {server.name}
+                    </p>
+                    <p className="text-xs text-text-muted">
+                      {isOwner ? "Owner · Enter server" : "Enter server"}
+                    </p>
+                  </div>
+                  <span className="relative text-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-text">
+                    →
+                  </span>
+                </Link>
+
+                {isOwner && (
+                  <div className="absolute right-2 top-1/2 z-10 -translate-y-1/2">
+                    <button
+                      type="button"
+                      title="Server options"
+                      disabled={busy}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setMenuId((id) =>
+                          id === server.id ? null : server.id,
+                        );
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition hover:bg-white/10 hover:text-text"
+                    >
+                      ···
+                    </button>
+                    {menuId === server.id && (
+                      <div
+                        ref={menuRef}
+                        role="menu"
+                        className="hango-anim-pop absolute right-0 top-[calc(100%+4px)] w-40 overflow-hidden rounded-xl border border-border-strong bg-[#161412] py-1 shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="w-full px-3 py-2 text-left text-sm text-text hover:bg-white/[0.06]"
+                          onClick={() => {
+                            setRenaming(server);
+                            setRenameValue(server.name);
+                            setMenuId(null);
+                          }}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="w-full px-3 py-2 text-left text-sm text-red-300 hover:bg-red-500/10"
+                          onClick={() => void handleDelete(server)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <span className="relative text-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-text">
-                →
-              </span>
-            </Link>
-          ))}
+            );
+          })}
 
           <button
             type="button"
@@ -153,6 +303,40 @@ export function ServersHome({
           </p>
         )}
       </main>
+
+      {renaming && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form
+            onSubmit={(e) => void handleRename(e)}
+            className="w-full max-w-sm rounded-2xl border border-border-strong bg-[#141312] p-5 shadow-xl"
+          >
+            <h2 className="text-base font-semibold text-text">Rename server</h2>
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              className="mt-3 w-full rounded-lg border border-border-strong bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-text-muted"
+              maxLength={80}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRenaming(null)}
+                className="rounded-lg px-3 py-2 text-sm text-text-muted hover:text-text"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={busy || !renameValue.trim()}
+                className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-fg disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <ServerActionsModal
         open={open}

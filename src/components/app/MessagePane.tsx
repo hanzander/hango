@@ -28,7 +28,6 @@ type MessagePaneProps = {
   loading?: boolean;
   currentUserId?: string;
   canManageMessages?: boolean;
-  compact?: boolean;
   typingNames?: string[];
   searchQuery?: string;
   pinsOnly?: boolean;
@@ -53,7 +52,6 @@ export function MessagePane({
   loading,
   currentUserId,
   canManageMessages,
-  compact,
   typingNames = [],
   searchQuery = "",
   pinsOnly = false,
@@ -266,7 +264,7 @@ export function MessagePane({
             </p>
           </div>
         ) : (
-          <ul className={cn(compact ? "space-y-0" : "space-y-0")}>
+          <ul className="space-y-0">
             {visible.map((message, i) => {
               const prev = visible[i - 1];
               const showDate =
@@ -299,7 +297,6 @@ export function MessagePane({
                   <MessageRow
                     message={message}
                     grouped={grouped}
-                    compact={compact}
                     currentUserId={currentUserId}
                     isOwn={message.author_id === currentUserId}
                     canManageMessages={canManageMessages}
@@ -389,7 +386,6 @@ function formatTyping(names: string[]) {
 function MessageRow({
   message,
   grouped,
-  compact,
   currentUserId,
   isOwn,
   canManageMessages,
@@ -409,7 +405,6 @@ function MessageRow({
 }: {
   message: Message;
   grouped: boolean;
-  compact?: boolean;
   currentUserId?: string;
   isOwn: boolean;
   canManageMessages?: boolean;
@@ -452,9 +447,7 @@ function MessageRow({
     <div
       className={cn(
         "hango-msg group relative grid grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-x-3 rounded-xl px-2 py-0.5 transition-colors duration-150 hover:bg-white/[0.035]",
-        compact && "grid-cols-[2rem_minmax(0,1fr)] py-0.5",
-        grouped && !compact && "mt-0",
-        !grouped && !compact && "mt-2",
+        grouped ? "mt-0" : "mt-2",
         message.pinned_at && "bg-amber-500/[0.05]",
       )}
       style={{ alignItems: "start" }}
@@ -469,11 +462,11 @@ function MessageRow({
             <Avatar
               name={name}
               src={message.author?.avatar_url}
-              size={compact ? "sm" : "md"}
+              size="md"
             />
           </button>
         ) : (
-          <div className={compact ? "h-8 w-8" : "h-10 w-10"} aria-hidden />
+          <div className="h-10 w-10" aria-hidden />
         )}
       </div>
       <div className="min-w-0">
@@ -565,7 +558,7 @@ function MessageRow({
         )}
 
         {(message.attachments?.length ?? 0) > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-1.5 flex flex-wrap gap-2">
             {message.attachments!.map((a) => {
               const isImage = (a.content_type || "").startsWith("image/") ||
                 /\.(png|jpe?g|gif|webp|avif)$/i.test(a.filename);
@@ -574,13 +567,13 @@ function MessageRow({
                   key={a.id}
                   type="button"
                   onClick={() => onOpenAttachment(a)}
-                  className="block overflow-hidden rounded-lg border border-border"
+                  className="block max-w-full overflow-hidden rounded-lg border border-border text-left"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={a.url}
                     alt={a.filename}
-                    className="max-h-80 max-w-sm object-contain"
+                    className="block max-h-80 max-w-full object-contain sm:max-w-md"
                   />
                 </button>
               ) : (

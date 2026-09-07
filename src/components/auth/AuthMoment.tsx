@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { useEffect, useRef, type ReactNode } from "react";
 
 export type AuthMomentKind = "welcome" | "welcome-new" | "goodbye";
 
@@ -44,24 +43,20 @@ export function AuthMoment({
   onDone,
   durationMs = 1800,
 }: AuthMomentProps) {
-  const [leaving, setLeaving] = useState(false);
   const copy = COPY[kind];
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   useEffect(() => {
-    const fadeAt = window.setTimeout(() => setLeaving(true), durationMs - 420);
-    const doneAt = window.setTimeout(onDone, durationMs);
-    return () => {
-      window.clearTimeout(fadeAt);
-      window.clearTimeout(doneAt);
-    };
-  }, [durationMs, onDone]);
+    // Stay fully opaque until the parent navigates away — no fade that
+    // would flash the page underneath (login form, servers list, etc.).
+    const doneAt = window.setTimeout(() => onDoneRef.current(), durationMs);
+    return () => window.clearTimeout(doneAt);
+  }, [durationMs]);
 
   return (
     <div
-      className={cn(
-        "fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-bg transition-opacity duration-[400ms]",
-        leaving ? "opacity-0" : "opacity-100",
-      )}
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-bg"
       role="status"
       aria-live="polite"
     >

@@ -8,10 +8,12 @@ import { ServersHome } from "@/components/app/ServersHome";
 export function AppHome({
   displayName,
   avatarUrl,
+  userId,
   servers,
 }: {
   displayName: string;
   avatarUrl?: string | null;
+  userId: string;
   servers: Server[];
 }) {
   const router = useRouter();
@@ -27,6 +29,7 @@ export function AppHome({
     <ServersHome
       displayName={displayName}
       avatarUrl={avatarUrl}
+      userId={userId}
       servers={servers}
       onSignOut={signOut}
     />
