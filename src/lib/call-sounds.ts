@@ -218,6 +218,11 @@ export const SOUNDBOARD_CLIPS: SoundboardClip[] = [
     src: "/sounds/leclerc.mp3",
   },
   {
+    id: "stupid-leclarc",
+    label: "Stupid",
+    src: "/sounds/i-am-stupid-leclarc.mp3",
+  },
+  {
     id: "horn",
     label: "Horn",
     tones: [
