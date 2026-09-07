@@ -1,58 +1,274 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
-  LiveKitRoom,
-  RoomAudioRenderer,
-  useTracks,
-  VideoTrack,
-  useLocalParticipant,
-  useParticipants,
-  useConnectionState,
-  useIsSpeaking,
-  useMediaDeviceSelect,
-  type TrackReferenceOrPlaceholder,
-} from "@livekit/components-react";
-import { ConnectionState, Track, type Participant } from "livekit-client";
+  ConnectionState,
+  Room,
+  RoomEvent,
+  Track,
+  VideoPresets,
+  type LocalParticipant,
+  type Participant,
+  type RemoteTrack,
+  type RemoteTrackPublication,
+} from "livekit-client";
 import { Avatar } from "@/components/ui/Avatar";
-import { playJoinSound, playLeaveSound, playUserJoinedSound, playUserLeftSound, playMuteSound, playUnmuteSound, playCameraOffSound, playCameraOnSound } from "@/lib/call-sounds";
+import {
+  playLeaveSound,
+  playMuteSound,
+  playUnmuteSound,
+  playCameraOffSound,
+  playCameraOnSound,
+  unlockAudio,
+} from "@/lib/call-sounds";
+import {
+  getCachedDevices,
+  refreshMediaDevices,
+  warmDeviceCache,
+} from "@/lib/media-devices";
 import { cn } from "@/lib/utils";
-
-export type CallMode = "voice" | "video";
 
 type CallOverlayProps = {
   channelId: string;
   channelName: string;
   displayName: string;
-  preferVideo?: boolean;
   onLeave: () => void;
-  fullStage?: boolean;
+  onConnected?: () => void;
+  onDisconnected?: () => void;
+  /** Remote peers in this LiveKit room — used for Lounge sidebar when presence lags */
+  onRemoteRoster?: (
+    peers: { user_id: string; display_name: string }[],
+  ) => void;
 };
 
+type PeerSnapshot = {
+  identity: string;
+  name: string;
+  isLocal: boolean;
+  micOn: boolean;
+  camOn: boolean;
+};
+
+const MIC_OPTS = {
+  echoCancellation: true,
+  // noiseSuppression is CPU-heavy and was locking the tab for some users
+  noiseSuppression: false,
+  autoGainControl: true,
+} as const;
+
+const CAM_OPTS = {
+  resolution: VideoPresets.h360.resolution,
+} as const;
+
+function localPlaceholder(displayName: string): PeerSnapshot {
+  return {
+    identity: "__local__",
+    name: displayName,
+    isLocal: true,
+    micOn: false,
+    camOn: false,
+  };
+}
+
+function snapshotPeers(room: Room): PeerSnapshot[] {
+  const all: Participant[] = [
+    room.localParticipant,
+    ...Array.from(room.remoteParticipants.values()),
+  ];
+  return all.map((p) => ({
+    identity: p.identity,
+    name: p.name || p.identity.slice(0, 8),
+    isLocal: p.isLocal,
+    micOn: p.isMicrophoneEnabled,
+    camOn: p.isCameraEnabled,
+  }));
+}
+
+function peersEqual(a: PeerSnapshot[], b: PeerSnapshot[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.identity !== y.identity ||
+      x.name !== y.name ||
+      x.micOn !== y.micOn ||
+      x.camOn !== y.camOn
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Lean voice UI. Updates React state rarely; audio attach is DOM-only.
+ */
 export function CallOverlay({
   channelId,
   channelName,
   displayName,
-  preferVideo = false,
   onLeave,
-  fullStage = true,
+  onConnected,
+  onDisconnected,
+  onRemoteRoster,
 }: CallOverlayProps) {
-  const [token, setToken] = useState<string | null>(null);
-  const [serverUrl, setServerUrl] = useState<string | null>(null);
+  const [status, setStatus] = useState<
+    "connecting" | "live" | "error"
+  >("connecting");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [peers, setPeers] = useState<PeerSnapshot[]>(() => [
+    localPlaceholder(displayName),
+  ]);
+  const [micOn, setMicOn] = useState(false);
+  const [camOn, setCamOn] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
+  const [deviceHint, setDeviceHint] = useState<string | null>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  const [room, setRoom] = useState<Room | null>(null);
+
+  const roomRef = useRef<Room | null>(null);
+  const mediaBusyRef = useRef(false);
+  const intentionalLeave = useRef(false);
+  const knownRemotes = useRef<Set<string> | null>(null);
+  const peerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onConnectedRef = useRef(onConnected);
+  const onDisconnectedRef = useRef(onDisconnected);
+  const onLeaveRef = useRef(onLeave);
+  const onRemoteRosterRef = useRef(onRemoteRoster);
+  onConnectedRef.current = onConnected;
+  onDisconnectedRef.current = onDisconnected;
+  onLeaveRef.current = onLeave;
+  onRemoteRosterRef.current = onRemoteRoster;
+
+  const schedulePeers = useCallback(() => {
+    if (peerTimer.current != null) return;
+    peerTimer.current = setTimeout(() => {
+      peerTimer.current = null;
+      const room = roomRef.current;
+      if (!room) return;
+      const next = snapshotPeers(room);
+      setPeers((prev) => (peersEqual(prev, next) ? prev : next));
+      const mic = room.localParticipant.isMicrophoneEnabled;
+      const cam = room.localParticipant.isCameraEnabled;
+      setMicOn((prev) => (prev === mic ? prev : mic));
+      setCamOn((prev) => (prev === cam ? prev : cam));
+      onRemoteRosterRef.current?.(
+        next
+          .filter((p) => !p.isLocal)
+          .map((p) => ({ user_id: p.identity, display_name: p.name })),
+      );
+    }, 80);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    intentionalLeave.current = false;
+    knownRemotes.current = null;
 
-    async function fetchToken() {
-      setLoading(true);
+    const room = new Room({
+      // Audio-first Lounge: skip adaptive video work that hammers the main thread
+      adaptiveStream: false,
+      dynacast: false,
+      stopLocalTrackOnUnpublish: true,
+      audioCaptureDefaults: { ...MIC_OPTS },
+    });
+    roomRef.current = room;
+    setRoom(room);
+
+    // display:none can mute HTMLAudioElement in Chrome — keep off-screen instead
+    const audioHost = document.createElement("div");
+    audioHost.setAttribute("data-hango-audio", "true");
+    audioHost.style.cssText =
+      "position:fixed;width:1px;height:1px;left:-9999px;top:0;overflow:hidden;opacity:0;pointer-events:none";
+    document.body.appendChild(audioHost);
+
+    const attachedAudio = new Set<string>();
+
+    function attachRemoteAudio(track: RemoteTrack, participantId: string) {
+      if (track.kind !== Track.Kind.Audio) return;
+      const key = `${participantId}:${track.sid}`;
+      if (attachedAudio.has(key)) return;
+      attachedAudio.add(key);
+      const el = track.attach() as HTMLMediaElement;
+      el.dataset.hangoTrack = key;
+      el.autoplay = true;
+      el.muted = false;
+      el.volume = 1;
+      audioHost.appendChild(el);
+      void el.play().catch(() => {
+        setAudioBlocked(true);
+      });
+    }
+
+    function attachExistingRemoteAudio() {
+      room.remoteParticipants.forEach((p) => {
+        p.trackPublications.forEach((pub) => {
+          if (pub.track && pub.kind === Track.Kind.Audio) {
+            attachRemoteAudio(pub.track as RemoteTrack, p.identity);
+          }
+        });
+      });
+    }
+
+    function detachTrack(track: RemoteTrack, participantId?: string) {
+      const sid = track.sid;
+      if (participantId) attachedAudio.delete(`${participantId}:${sid}`);
+      else {
+        for (const k of [...attachedAudio]) {
+          if (k.endsWith(`:${sid}`)) attachedAudio.delete(k);
+        }
+      }
+      track.detach().forEach((el) => el.remove());
+    }
+
+    room
+      .on(RoomEvent.ParticipantConnected, schedulePeers)
+      .on(RoomEvent.ParticipantDisconnected, schedulePeers)
+      .on(RoomEvent.LocalTrackPublished, schedulePeers)
+      .on(RoomEvent.LocalTrackUnpublished, schedulePeers)
+      // Intentionally NOT listening to TrackMuted/Unmuted — those fire too often
+      // and were freezing the tab. Mute UI updates from local toggles + rare peer refresh.
+      .on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+        if (!participant.isLocal && track.kind === Track.Kind.Audio) {
+          attachRemoteAudio(track as RemoteTrack, participant.identity);
+        }
+        if (track.kind === Track.Kind.Video) schedulePeers();
+      })
+      .on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
+        detachTrack(track as RemoteTrack, participant.identity);
+        if (track.kind === Track.Kind.Video) schedulePeers();
+      })
+      .on(RoomEvent.MediaDevicesError, (err) => {
+        setDeviceHint(friendlyDeviceError(err, "device"));
+      })
+      .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        setAudioBlocked(!room.canPlaybackAudio);
+      })
+      .on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
+        if (state === ConnectionState.Connected) {
+          setStatus("live");
+          onConnectedRef.current?.();
+          schedulePeers();
+          knownRemotes.current = new Set(room.remoteParticipants.keys());
+        } else if (
+          state === ConnectionState.Disconnected &&
+          !intentionalLeave.current
+        ) {
+          setStatus("error");
+          setError("Disconnected from the call.");
+          onDisconnectedRef.current?.();
+        }
+      });
+
+    async function start() {
+      setStatus("connecting");
       setError(null);
       try {
         const res = await fetch("/api/livekit/token", {
@@ -63,43 +279,186 @@ export function CallOverlay({
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to join call");
         if (cancelled) return;
-        setToken(data.token);
-        setServerUrl(data.url);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to join call");
+
+        await room.connect(data.url, data.token, {
+          // Auto-subscribe audio; skip unused video until someone publishes
+          autoSubscribe: true,
+        });
+        if (cancelled) return;
+
+        attachExistingRemoteAudio();
+
+        // Browser autoplay policy — required to hear remote participants
+        try {
+          await room.startAudio();
+          setAudioBlocked(!room.canPlaybackAudio);
+        } catch {
+          setAudioBlocked(true);
         }
-      } finally {
-        if (!cancelled) setLoading(false);
+
+        // Yield so Chrome can paint before getUserMedia (avoids "Page Unresponsive")
+        await new Promise<void>((r) => setTimeout(r, 120));
+        if (cancelled) return;
+
+        try {
+          await room.localParticipant.setMicrophoneEnabled(true, MIC_OPTS);
+          setMicOn(true);
+          // Labels are available after mic permission — cache once, never wipe later
+          void warmDeviceCache();
+        } catch (micErr) {
+          setDeviceHint(friendlyDeviceError(micErr, "microphone"));
+          setMicOn(false);
+          // Still try to list devices (may prompt)
+          void warmDeviceCache();
+        }
+        schedulePeers();
+      } catch (err) {
+        if (cancelled) return;
+        setStatus("error");
+        setError(err instanceof Error ? err.message : "Failed to join call");
+        onDisconnectedRef.current?.();
       }
     }
 
-    fetchToken();
+    void start();
+
     return () => {
       cancelled = true;
+      intentionalLeave.current = true;
+      if (peerTimer.current) {
+        clearTimeout(peerTimer.current);
+        peerTimer.current = null;
+      }
+      try {
+        room.remoteParticipants.forEach((p) => {
+          p.trackPublications.forEach((pub: RemoteTrackPublication) => {
+            if (pub.track) detachTrack(pub.track, p.identity);
+          });
+        });
+      } catch {
+        /* ignore */
+      }
+      void room.disconnect();
+      room.removeAllListeners();
+      roomRef.current = null;
+      setRoom(null);
+      audioHost.remove();
     };
-  }, [channelId, displayName]);
+  }, [channelId, displayName, schedulePeers]);
 
-  if (loading) {
-    return (
-      <div
-        className={cn(
-          "flex flex-1 items-center justify-center bg-[#050505] text-sm text-text-muted",
-          fullStage ? "min-h-0" : "min-h-[280px]",
-        )}
-      >
-        Connecting to {channelName}…
-      </div>
-    );
+  async function withMediaLock(fn: () => Promise<void>) {
+    if (mediaBusyRef.current) return;
+    const r = roomRef.current;
+    if (!r || r.state !== ConnectionState.Connected) {
+      setDeviceHint("Still connecting — try again in a moment.");
+      return;
+    }
+    mediaBusyRef.current = true;
+    setMediaBusy(true);
+    try {
+      await fn();
+    } finally {
+      mediaBusyRef.current = false;
+      setMediaBusy(false);
+      schedulePeers();
+    }
   }
 
-  if (error || !token || !serverUrl) {
+  async function toggleMic() {
+    await withMediaLock(async () => {
+      const r = roomRef.current!;
+      const next = !r.localParticipant.isMicrophoneEnabled;
+      setDeviceHint(null);
+      setMicOn(next);
+      try {
+        const preferred = r.getActiveDevice("audioinput");
+        await r.localParticipant.setMicrophoneEnabled(next, {
+          ...MIC_OPTS,
+          ...(preferred ? { deviceId: preferred } : {}),
+        });
+        if (next) playUnmuteSound();
+        else playMuteSound();
+      } catch (err) {
+        // Retry once without deviceId (preferred device may be stale)
+        try {
+          await r.localParticipant.setMicrophoneEnabled(next, MIC_OPTS);
+          if (next) playUnmuteSound();
+          else playMuteSound();
+        } catch (err2) {
+          setMicOn(!next);
+          setDeviceHint(friendlyDeviceError(err2, "microphone"));
+        }
+      }
+    });
+  }
+
+  async function toggleCam() {
+    await withMediaLock(async () => {
+      const r = roomRef.current!;
+      const next = !r.localParticipant.isCameraEnabled;
+      setDeviceHint(null);
+      setCamOn(next);
+      try {
+        const deviceId = r.getActiveDevice("videoinput");
+        await r.localParticipant.setCameraEnabled(next, {
+          ...CAM_OPTS,
+          ...(deviceId ? { deviceId } : {}),
+        });
+        if (next) playCameraOnSound();
+        else playCameraOffSound();
+      } catch (err) {
+        try {
+          await r.localParticipant.setCameraEnabled(next, CAM_OPTS);
+          if (next) playCameraOnSound();
+          else playCameraOffSound();
+        } catch (err2) {
+          setCamOn(!next);
+          setDeviceHint(friendlyDeviceError(err2, "camera"));
+        }
+      }
+    });
+  }
+
+  function handleLeave() {
+    intentionalLeave.current = true;
+    playLeaveSound();
+    const r = roomRef.current;
+    window.setTimeout(() => {
+      void r?.disconnect();
+      onLeaveRef.current();
+    }, 80);
+  }
+
+  async function enableCallAudio() {
+    unlockAudio();
+    const r = roomRef.current;
+    if (!r) return;
+    try {
+      await r.startAudio();
+      setAudioBlocked(!r.canPlaybackAudio);
+    } catch {
+      setAudioBlocked(true);
+    }
+  }
+
+  const live = status === "live";
+  const n = Math.max(peers.length, 1);
+  const gridClass =
+    n === 1
+      ? "grid-cols-1 max-w-3xl mx-auto"
+      : n === 2
+        ? "grid-cols-1 sm:grid-cols-2 max-w-5xl mx-auto"
+        : n <= 4
+          ? "grid-cols-2 max-w-5xl mx-auto"
+          : "grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto";
+
+  if (status === "error") {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[#050505] px-6 text-center">
-        <p className="text-sm text-danger">{error || "Missing call credentials"}</p>
+        <p className="text-sm text-danger">{error || "Call failed"}</p>
         <button
           type="button"
-          onClick={onLeave}
+          onClick={handleLeave}
           className="rounded-full border border-border-strong px-4 py-2 text-sm text-text-secondary hover:text-text"
         >
           Back
@@ -109,135 +468,7 @@ export function CallOverlay({
   }
 
   return (
-    <LiveKitRoom
-      token={token}
-      serverUrl={serverUrl}
-      connect
-      audio
-      video={false}
-      options={{
-        adaptiveStream: true,
-        dynacast: true,
-      }}
-      onDisconnected={onLeave}
-      onError={(err) => {
-        console.warn("[hango call]", err);
-      }}
-      onMediaDeviceFailure={(failure, kind) => {
-        console.warn("[hango device]", kind, failure);
-      }}
-      className="flex min-h-0 flex-1 flex-col bg-[#050505]"
-    >
-      <CallStage channelName={channelName} onLeave={onLeave} />
-      <RoomAudioRenderer />
-    </LiveKitRoom>
-  );
-}
-
-function CallStage({
-  channelName,
-  onLeave,
-}: {
-  channelName: string;
-  onLeave: () => void;
-}) {
-  const connectionState = useConnectionState();
-  const participants = useParticipants();
-  const { localParticipant } = useLocalParticipant();
-  const cameraTracks = useTracks(
-    [Track.Source.Camera],
-    { onlySubscribed: false },
-  );
-
-  // Prefer one tile per participant (camera if present, else avatar placeholder via participants)
-  const tiles = useMemo(() => {
-    const byId = new Map<string, (typeof cameraTracks)[number]>();
-    for (const t of cameraTracks) {
-      byId.set(t.participant.identity, t);
-    }
-    return participants.map((p) => ({
-      participant: p,
-      trackRef: byId.get(p.identity) ?? null,
-    }));
-  }, [participants, cameraTracks]);
-
-  const micOn = localParticipant.isMicrophoneEnabled;
-  const camOn = localParticipant.isCameraEnabled;
-  const connected = connectionState === ConnectionState.Connected;
-  const playedJoinSound = useRef(false);
-  const knownPeers = useRef<Set<string> | null>(null);
-  const [deviceHint, setDeviceHint] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!connected || playedJoinSound.current) return;
-    playedJoinSound.current = true;
-    playJoinSound();
-  }, [connected]);
-
-  // Peer join / leave cues (skip local + first snapshot)
-  useEffect(() => {
-    if (!connected) return;
-
-    const ids = new Set(
-      participants
-        .filter((p) => !p.isLocal)
-        .map((p) => p.identity),
-    );
-
-    if (knownPeers.current === null) {
-      knownPeers.current = ids;
-      return;
-    }
-
-    for (const id of ids) {
-      if (!knownPeers.current.has(id)) playUserJoinedSound();
-    }
-    for (const id of knownPeers.current) {
-      if (!ids.has(id)) playUserLeftSound();
-    }
-    knownPeers.current = ids;
-  }, [participants, connected]);
-
-  async function toggleMic() {
-    try {
-      setDeviceHint(null);
-      const next = !micOn;
-      await localParticipant.setMicrophoneEnabled(next);
-      if (next) playUnmuteSound();
-      else playMuteSound();
-    } catch (err) {
-      setDeviceHint(friendlyDeviceError(err, "microphone"));
-    }
-  }
-
-  async function toggleCam() {
-    try {
-      setDeviceHint(null);
-      const next = !camOn;
-      await localParticipant.setCameraEnabled(next);
-      if (next) playCameraOnSound();
-      else playCameraOffSound();
-    } catch (err) {
-      setDeviceHint(friendlyDeviceError(err, "camera"));
-    }
-  }
-
-  function handleLeave() {
-    playLeaveSound();
-    // Let the leave chime start before tearing down audio
-    window.setTimeout(() => onLeave(), 120);
-  }
-
-  const gridClass = useMemo(() => {
-    const n = Math.max(tiles.length, 1);
-    if (n === 1) return "grid-cols-1 max-w-3xl mx-auto";
-    if (n === 2) return "grid-cols-1 sm:grid-cols-2 max-w-5xl mx-auto";
-    if (n <= 4) return "grid-cols-2 max-w-5xl mx-auto";
-    return "grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto";
-  }, [tiles.length]);
-
-  return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col bg-[#050505]">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -253,7 +484,7 @@ function CallStage({
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
-                connected
+                live
                   ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
                   : "bg-amber-400",
               )}
@@ -263,12 +494,23 @@ function CallStage({
             </h1>
           </div>
           <p className="mt-0.5 text-xs text-text-muted">
-            {connected
-              ? `${participants.length} connected`
-              : String(connectionState)}
+            {live ? `${peers.length} connected` : "Connecting…"}
           </p>
         </div>
       </header>
+
+      {audioBlocked && (
+        <div className="relative z-10 mx-5 mb-2 flex items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-50">
+          <p>Browser blocked call audio. Click to hear others.</p>
+          <button
+            type="button"
+            className="shrink-0 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-medium text-black hover:bg-emerald-400"
+            onClick={() => void enableCallAudio()}
+          >
+            Enable sound
+          </button>
+        </div>
+      )}
 
       {deviceHint && (
         <div className="relative z-10 mx-5 mb-2 flex items-start justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
@@ -285,43 +527,50 @@ function CallStage({
 
       <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4 pb-32">
         <div className={cn("grid w-full gap-3", gridClass)}>
-          {tiles.map(({ participant, trackRef }) => (
-            <ParticipantTile
-              key={participant.identity}
-              participant={participant}
-              trackRef={trackRef}
-            />
+          {peers.map((p) => (
+            <PeerTile key={p.identity} peer={p} room={room} />
           ))}
         </div>
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center pb-6">
-        <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/10 bg-black/75 px-2 py-2 shadow-2xl backdrop-blur-xl">
+        <div
+          className={cn(
+            "pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/10 bg-black/75 px-2 py-2 shadow-2xl backdrop-blur-xl",
+            (!live || mediaBusy) && "opacity-80",
+          )}
+        >
           <DeviceControl
+            room={room}
             kind="audioinput"
             label="Microphone"
             enabled={micOn}
+            disabled={!room || mediaBusy}
             dangerWhenOff
             onToggle={toggleMic}
-            onDeviceError={(msg) => setDeviceHint(msg)}
+            onDeviceError={setDeviceHint}
             iconOn={<IconMic />}
             iconOff={<IconMicOff />}
           />
           <DeviceControl
+            room={room}
             kind="audiooutput"
             label="Speakers / headphones"
             enabled
+            disabled={!room || mediaBusy}
             hideToggle
-            onDeviceError={(msg) => setDeviceHint(msg)}
+            onDeviceError={setDeviceHint}
             iconOn={<IconHeadphones />}
             iconOff={<IconHeadphones />}
           />
           <DeviceControl
+            room={room}
             kind="videoinput"
             label="Camera"
             enabled={camOn}
+            disabled={!room || mediaBusy}
             onToggle={toggleCam}
-            onDeviceError={(msg) => setDeviceHint(msg)}
+            onDeviceError={setDeviceHint}
             iconOn={<IconCamera />}
             iconOff={<IconCameraOff />}
           />
@@ -340,6 +589,70 @@ function CallStage({
   );
 }
 
+const PeerTile = function PeerTile({
+  peer,
+  room,
+}: {
+  peer: PeerSnapshot;
+  room: Room | null;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !room || !peer.camOn) {
+      if (el) el.srcObject = null;
+      return;
+    }
+
+    const participant: Participant | LocalParticipant | undefined = peer.isLocal
+      ? room.localParticipant
+      : room.remoteParticipants.get(peer.identity);
+    if (!participant) return;
+
+    const camPub = Array.from(participant.trackPublications.values()).find(
+      (pub) => pub.source === Track.Source.Camera && pub.track && !pub.isMuted,
+    );
+    if (!camPub?.track) return;
+
+    camPub.track.attach(el);
+    return () => {
+      camPub.track?.detach(el);
+    };
+  }, [peer.camOn, peer.identity, peer.isLocal, room]);
+
+  return (
+    <div className="relative aspect-video overflow-hidden rounded-2xl bg-[#0c0c0c] ring-1 ring-white/5">
+      {peer.camOn ? (
+        <video
+          ref={videoRef}
+          className="h-full w-full object-cover"
+          muted={peer.isLocal}
+          playsInline
+          autoPlay
+        />
+      ) : (
+        <div className="flex h-full flex-col items-center justify-center gap-3 bg-gradient-to-b from-[#121212] to-[#080808]">
+          <Avatar name={peer.name} size="xl" />
+        </div>
+      )}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium text-white">
+            {peer.name}
+            {peer.isLocal ? " (you)" : ""}
+          </span>
+          {!peer.micOn && (
+            <span className="rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-red-300">
+              muted
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function friendlyDeviceError(err: unknown, kind: string) {
   const name =
     err && typeof err === "object" && "name" in err
@@ -347,22 +660,30 @@ function friendlyDeviceError(err: unknown, kind: string) {
       : "";
   const message = err instanceof Error ? err.message : String(err);
 
-  if (name === "NotReadableError" || /Could not start video source/i.test(message)) {
+  if (
+    name === "NotReadableError" ||
+    /Could not start video source/i.test(message)
+  ) {
     return `Couldn’t start your ${kind}. Close other apps using it (Zoom, Teams, browser tabs), then try again.`;
   }
   if (name === "NotAllowedError" || /Permission/i.test(message)) {
-    return `Permission denied for ${kind}. Allow access in your browser settings.`;
+    return `Permission denied for ${kind}. Allow access in your browser settings, then rejoin.`;
   }
   if (name === "NotFoundError") {
     return `No ${kind} found. Plug one in or pick another device.`;
+  }
+  if (/setSinkId|audio output/i.test(message)) {
+    return "This browser can’t switch speakers. Try Chrome/Edge, or change output in OS settings.";
   }
   return message || `Couldn’t use your ${kind}.`;
 }
 
 function DeviceControl({
+  room,
   kind,
   label,
   enabled,
+  disabled,
   onToggle,
   onDeviceError,
   iconOn,
@@ -370,9 +691,11 @@ function DeviceControl({
   dangerWhenOff,
   hideToggle,
 }: {
+  room: Room | null;
   kind: MediaDeviceKind;
   label: string;
   enabled: boolean;
+  disabled?: boolean;
   onToggle?: () => void | Promise<void>;
   onDeviceError?: (message: string) => void;
   iconOn: ReactNode;
@@ -391,6 +714,10 @@ function DeviceControl({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
   const mutedLook = dangerWhenOff && !enabled;
 
   return (
@@ -399,14 +726,16 @@ function DeviceControl({
         className={cn(
           "flex overflow-hidden rounded-full",
           mutedLook ? "bg-white text-black" : "bg-white/10 text-white",
+          disabled && "pointer-events-none opacity-50",
         )}
       >
         {!hideToggle && onToggle ? (
           <button
             type="button"
             title={enabled ? `${label} on` : `${label} off`}
+            disabled={disabled}
             onClick={() => void onToggle()}
-            className="flex h-12 w-11 items-center justify-center transition-colors hover:bg-white/10"
+            className="flex h-12 w-11 items-center justify-center transition-colors hover:bg-white/10 disabled:cursor-not-allowed"
           >
             <span className="flex h-5 w-5 items-center justify-center [&_svg]:h-5 [&_svg]:w-5">
               {enabled ? iconOn : iconOff}
@@ -416,8 +745,9 @@ function DeviceControl({
           <button
             type="button"
             title={label}
+            disabled={disabled}
             onClick={() => setOpen((v) => !v)}
-            className="flex h-12 w-11 items-center justify-center transition-colors hover:bg-white/10"
+            className="flex h-12 w-11 items-center justify-center transition-colors hover:bg-white/10 disabled:cursor-not-allowed"
           >
             <span className="flex h-5 w-5 items-center justify-center [&_svg]:h-5 [&_svg]:w-5">
               {iconOn}
@@ -427,9 +757,10 @@ function DeviceControl({
         <button
           type="button"
           title={`Select ${label.toLowerCase()}`}
+          disabled={disabled || !room}
           onClick={() => setOpen((v) => !v)}
           className={cn(
-            "flex h-12 w-7 items-center justify-center border-l transition-colors hover:bg-white/10",
+            "flex h-12 w-7 items-center justify-center border-l transition-colors hover:bg-white/10 disabled:cursor-not-allowed",
             mutedLook ? "border-black/15" : "border-white/10",
           )}
           aria-expanded={open}
@@ -438,11 +769,11 @@ function DeviceControl({
         </button>
       </div>
 
-      {open && (
+      {open && room && (
         <DeviceMenu
+          room={room}
           kind={kind}
           label={label}
-          enabled={enabled}
           onClose={() => setOpen(false)}
           onDeviceError={onDeviceError}
         />
@@ -451,59 +782,176 @@ function DeviceControl({
   );
 }
 
-/** Mounted only while the menu is open — avoids LiveKit device polling on join. */
 function DeviceMenu({
+  room,
   kind,
   label,
-  enabled,
   onClose,
   onDeviceError,
 }: {
+  room: Room;
   kind: MediaDeviceKind;
   label: string;
-  enabled: boolean;
   onClose: () => void;
   onDeviceError?: (message: string) => void;
 }) {
-  const shouldRequestPermissions = kind !== "videoinput" || enabled;
-  const { devices, activeDeviceId, setActiveMediaDevice } =
-    useMediaDeviceSelect({
-      kind,
-      requestPermissions: shouldRequestPermissions,
-      onError: (e) => onDeviceError?.(friendlyDeviceError(e, label.toLowerCase())),
-    });
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>(() =>
+    getCachedDevices(kind),
+  );
+  const [activeId, setActiveId] = useState(() => {
+    const cached = getCachedDevices(kind);
+    const current = room.getActiveDevice(kind);
+    if (current && cached.some((d) => d.deviceId === current)) return current;
+    return cached[0]?.deviceId ?? "";
+  });
+  const [loading, setLoading] = useState(() => getCachedDevices(kind).length === 0);
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      const cached = getCachedDevices(kind);
+      if (cached.length > 0) {
+        setDevices(cached);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        const micLive = room.localParticipant.isMicrophoneEnabled;
+        const camLive = room.localParticipant.isCameraEnabled;
+        // Never open a second capture stream while LiveKit already owns mic/cam
+        const requestPermission =
+          (kind === "audioinput" && !micLive) ||
+          (kind === "videoinput" && !camLive) ||
+          (kind === "audiooutput" && !micLive);
+
+        const list = await refreshMediaDevices(kind, { requestPermission });
+        if (!alive) return;
+
+        // Critical: empty refresh must NOT clear a list we already showed
+        if (list.length > 0) {
+          setDevices(list);
+          const current = room.getActiveDevice(kind);
+          setActiveId(
+            current && list.some((d) => d.deviceId === current)
+              ? current
+              : list[0].deviceId,
+          );
+        }
+      } catch (err) {
+        if (alive) {
+          onDeviceError?.(friendlyDeviceError(err, label.toLowerCase()));
+        }
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
+
+  async function selectDevice(deviceId: string) {
+    setSwitching(true);
+    try {
+      await room.switchActiveDevice(kind, deviceId, true);
+      setActiveId(deviceId);
+
+      if (kind === "audioinput" && room.localParticipant.isMicrophoneEnabled) {
+        await room.localParticipant.setMicrophoneEnabled(true, {
+          ...MIC_OPTS,
+          deviceId,
+        });
+      }
+      if (kind === "videoinput" && room.localParticipant.isCameraEnabled) {
+        await room.localParticipant.setCameraEnabled(true, {
+          ...CAM_OPTS,
+          deviceId,
+        });
+      }
+
+      onClose();
+    } catch (err) {
+      onDeviceError?.(friendlyDeviceError(err, label.toLowerCase()));
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  async function refresh() {
+    setLoading(devices.length === 0);
+    try {
+      const micLive = room.localParticipant.isMicrophoneEnabled;
+      const camLive = room.localParticipant.isCameraEnabled;
+      const requestPermission =
+        (kind === "audioinput" && !micLive) ||
+        (kind === "videoinput" && !camLive) ||
+        (kind === "audiooutput" && !micLive);
+      const list = await refreshMediaDevices(kind, { requestPermission });
+      if (list.length > 0) {
+        setDevices(list);
+        setActiveId(room.getActiveDevice(kind) ?? list[0].deviceId);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const showEmpty = !loading && devices.length === 0;
 
   return (
-    <div className="absolute bottom-[calc(100%+10px)] left-1/2 z-30 w-64 -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-[#111] shadow-2xl">
-      <div className="border-b border-white/10 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-white/45">
-        {label}
+    <div className="absolute bottom-[calc(100%+10px)] left-1/2 z-30 w-72 -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-[#111] shadow-2xl">
+      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+        <span className="text-[11px] font-medium uppercase tracking-wider text-white/45">
+          {label}
+        </span>
+        <button
+          type="button"
+          className="text-[10px] text-white/40 hover:text-white/80"
+          onClick={() => void refresh()}
+        >
+          Refresh
+        </button>
       </div>
       <ul className="max-h-56 overflow-y-auto py-1">
-        {devices.length === 0 ? (
+        {loading && devices.length === 0 ? (
           <li className="px-3 py-2 text-xs text-white/40">
-            {kind === "videoinput" && !enabled
-              ? "Turn camera on to list devices"
-              : "No devices found"}
+            Looking for devices…
+          </li>
+        ) : showEmpty ? (
+          <li className="space-y-2 px-3 py-2 text-xs text-white/50">
+            <p>
+              {kind === "videoinput"
+                ? "No camera found. Allow camera access, then Try again."
+                : kind === "audiooutput"
+                  ? "No speakers listed. System default will be used."
+                  : "No mic found. Allow microphone access, then Try again."}
+            </p>
+            <button
+              type="button"
+              className="text-emerald-400 hover:underline"
+              onClick={() => void refresh()}
+            >
+              Try again
+            </button>
           </li>
         ) : (
-          devices.map((device) => {
-            const active = device.deviceId === activeDeviceId;
+          devices.map((device, i) => {
+            const active = device.deviceId === activeId;
             return (
-              <li key={device.deviceId || device.label}>
+              <li key={device.deviceId || `${kind}-${i}`}>
                 <button
                   type="button"
-                  onClick={async () => {
-                    try {
-                      await setActiveMediaDevice(device.deviceId);
-                      onClose();
-                    } catch (err) {
-                      onDeviceError?.(
-                        friendlyDeviceError(err, label.toLowerCase()),
-                      );
-                    }
-                  }}
+                  disabled={switching}
+                  onClick={() => void selectDevice(device.deviceId)}
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-white/80 transition-colors hover:bg-white/5",
+                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-white/80 transition-colors hover:bg-white/5 disabled:opacity-50",
                     active && "bg-white/10 text-white",
                   )}
                 >
@@ -514,7 +962,7 @@ function DeviceMenu({
                     )}
                   />
                   <span className="truncate">
-                    {device.label || "Default device"}
+                    {device.label?.trim() || `${label} ${i + 1}`}
                   </span>
                 </button>
               </li>
@@ -526,64 +974,7 @@ function DeviceMenu({
   );
 }
 
-function ParticipantTile({
-  participant,
-  trackRef,
-}: {
-  participant: Participant;
-  trackRef: TrackReferenceOrPlaceholder | null;
-}) {
-  const speaking = useIsSpeaking(participant);
-  const name = participant.name || participant.identity.slice(0, 8);
-  const showVideo = Boolean(
-    trackRef?.publication?.track &&
-      !trackRef.publication.isMuted &&
-      participant.isCameraEnabled,
-  );
 
-  return (
-    <div
-      className={cn(
-        "relative aspect-video overflow-hidden rounded-2xl bg-[#0c0c0c] ring-1 ring-white/5 transition-shadow",
-        speaking &&
-          "ring-2 ring-emerald-400/80 shadow-[0_0_0_4px_rgba(52,211,153,0.12)]",
-      )}
-    >
-      {showVideo && trackRef && trackRef.publication ? (
-        <VideoTrack
-          trackRef={trackRef as Parameters<typeof VideoTrack>[0]["trackRef"]}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <div className="flex h-full flex-col items-center justify-center gap-3 bg-gradient-to-b from-[#121212] to-[#080808]">
-          <div
-            className={cn(
-              "rounded-full p-0.5 transition-all",
-              speaking && "bg-emerald-400/30 p-1",
-            )}
-          >
-            <Avatar name={name} size="xl" />
-          </div>
-        </div>
-      )}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-white">
-            {name}
-            {participant.isLocal ? " (you)" : ""}
-          </span>
-          {!participant.isMicrophoneEnabled && (
-            <span className="rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-red-300">
-              muted
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Clean stroke icons — fixed size, crisp on HiDPI */
 function IconMic() {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -708,13 +1099,7 @@ function IconLeave() {
 
 function IconChevron() {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      width="12"
-      height="12"
-      fill="none"
-      aria-hidden
-    >
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" aria-hidden>
       <path
         d="M6 9l6 6 6-6"
         stroke="currentColor"

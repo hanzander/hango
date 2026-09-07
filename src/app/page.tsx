@@ -1,6 +1,33 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { isSupabaseConfigured } from "@/lib/utils";
 
-export default function HomePage() {
+export default async function HomePage() {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("onboarding_complete")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (profile && !profile.onboarding_complete) {
+          redirect("/onboarding");
+        }
+        redirect("/app");
+      }
+    } catch {
+      // Missing env / auth error — show marketing page
+    }
+  }
+
   return (
     <div className="relative min-h-dvh overflow-hidden bg-bg">
       <div

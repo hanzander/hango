@@ -1,6 +1,14 @@
-import { createBrowserClient } from "@supabase/ssr";
+"use client";
 
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+let browserClient: SupabaseClient | null = null;
+
+/** One shared browser client — avoids duplicate Realtime sockets. */
 export function createClient() {
+  if (browserClient) return browserClient;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -10,5 +18,6 @@ export function createClient() {
     );
   }
 
-  return createBrowserClient(url, key);
+  browserClient = createBrowserClient(url, key);
+  return browserClient;
 }

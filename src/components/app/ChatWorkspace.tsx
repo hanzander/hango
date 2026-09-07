@@ -14,6 +14,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import type { Channel, Message, Profile, Server } from "@/lib/types";
 import { isSupabaseConfigured } from "@/lib/utils";
+import { playMessageNotification } from "@/lib/call-sounds";
 
 type ChatWorkspaceProps = {
   serverId?: string;
@@ -246,6 +247,47 @@ export function ChatWorkspace({
       supabase.removeChannel(channel);
     };
   }, [configured, activeChannel]);
+
+  // Server-wide chat notifications (like Discord) — ping when others message any text channel
+  useEffect(() => {
+    if (!configured || !activeServer || !profile?.id) return;
+
+    const textChannelIds = new Set(
+      channels
+        .filter(
+          (c) =>
+            c.server_id === activeServer.id && (c.kind ?? "text") === "text",
+        )
+        .map((c) => c.id),
+    );
+    if (textChannelIds.size === 0) return;
+
+    const supabase = createClient();
+    const myId = profile.id;
+
+    const channel = supabase
+      .channel(`server-chat-notify:${activeServer.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          const row = payload.new as Message;
+          if (!row?.channel_id || !row.author_id) return;
+          if (row.author_id === myId) return;
+          if (!textChannelIds.has(row.channel_id)) return;
+          playMessageNotification();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [configured, activeServer, channels, profile?.id]);
 
   const handleSend = useCallback(
     async (content: string) => {

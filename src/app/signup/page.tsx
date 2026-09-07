@@ -1,7 +1,22 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/auth/AuthForm";
+import { createClient } from "@/lib/supabase/server";
+import { isSupabaseConfigured } from "@/lib/utils";
 
-export default function SignupPage() {
+export default async function SignupPage() {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) redirect("/app");
+    } catch {
+      /* show signup form */
+    }
+  }
+
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
       <header className="px-6 py-6">
