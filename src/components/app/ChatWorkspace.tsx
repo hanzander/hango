@@ -946,13 +946,36 @@ export function ChatWorkspace({
       }
 
       const supabase = createClient();
-      const existing = messages
+      const localMine = messages
         .find((m) => m.id === messageId)
         ?.reactions?.find(
           (r) => r.user_id === profile.id && r.emoji === emoji,
         );
 
-      if (existing) {
+      // Optimistically flip UI
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId) return m;
+          const list = m.reactions ?? [];
+          if (localMine) {
+            return {
+              ...m,
+              reactions: list.filter(
+                (r) => !(r.user_id === profile.id && r.emoji === emoji),
+              ),
+            };
+          }
+          return {
+            ...m,
+            reactions: [
+              ...list,
+              { message_id: messageId, user_id: profile.id, emoji },
+            ],
+          };
+        }),
+      );
+
+      if (localMine) {
         const { error } = await supabase
           .from("message_reactions")
           .delete()
@@ -960,13 +983,39 @@ export function ChatWorkspace({
           .eq("user_id", profile.id)
           .eq("emoji", emoji);
         if (error) toast(error.message, "danger");
-      } else {
-        const { error } = await supabase.from("message_reactions").insert({
-          message_id: messageId,
-          user_id: profile.id,
-          emoji,
-        });
-        if (error) toast(error.message, "danger");
+        return;
+      }
+
+      const { error } = await supabase.from("message_reactions").insert({
+        message_id: messageId,
+        user_id: profile.id,
+        emoji,
+      });
+      if (error) {
+        // Already reacted (stale local state) → treat as toggle off
+        if (/duplicate|unique/i.test(error.message)) {
+          await supabase
+            .from("message_reactions")
+            .delete()
+            .eq("message_id", messageId)
+            .eq("user_id", profile.id)
+            .eq("emoji", emoji);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? {
+                    ...m,
+                    reactions: (m.reactions ?? []).filter(
+                      (r) =>
+                        !(r.user_id === profile.id && r.emoji === emoji),
+                    ),
+                  }
+                : m,
+            ),
+          );
+          return;
+        }
+        toast(error.message, "danger");
       }
     },
     [configured, profile, activeChannel, messages, toast],
