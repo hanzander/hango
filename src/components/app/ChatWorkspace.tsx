@@ -1278,13 +1278,6 @@ export function ChatWorkspace({
           ? {
               ...m,
               author: {
-                id: next.id,
-                display_name: next.display_name,
-                avatar_url: next.avatar_url,
-                status: next.status,
-                custom_status: next.custom_status,
-                bio: next.bio,
-                username: next.username,
                 ...(m.author ?? {}),
                 ...next,
               },

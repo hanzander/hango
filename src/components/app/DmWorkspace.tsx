@@ -40,10 +40,14 @@ export function DmWorkspace({
         .eq("channel_id", channelId);
       const others = (members ?? [])
         .map((m) => {
-          const p = m.profiles as Profile | Profile[] | null;
-          return Array.isArray(p) ? p[0] : p;
+          const raw = m.profiles as Profile | Profile[] | null;
+          if (Array.isArray(raw)) return raw[0] ?? null;
+          return raw;
         })
-        .filter((p): p is Profile => p != null && p.id !== userId);
+        .filter((p): p is Profile => {
+          if (!p) return false;
+          return p.id !== userId;
+        });
       if (!cancelled) setOther(others[0] ?? null);
 
       const { data } = await supabase
