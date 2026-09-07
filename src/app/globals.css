@@ -79,3 +79,34 @@ body {
 .hango-scroll::-webkit-scrollbar-thumb:hover {
   background: #3a3a3a;
 }
+
+/* Light theme */
+html[data-theme="light"] {
+  --bg: #f4f4f5;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #ececef;
+  --bg-hover: #e4e4e7;
+  --bg-active: #d4d4d8;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --text: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --accent: #18181b;
+  --accent-fg: #fafafa;
+  --danger: #dc2626;
+  --rail: #e4e4e7;
+  --sidebar: #fafafa;
+  --chat: #ffffff;
+}
+
+html[data-theme="light"] ::selection {
+  background: #d4d4d8;
+  color: #18181b;
+}
+
+html[data-density="compact"] .hango-msg {
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+}
+

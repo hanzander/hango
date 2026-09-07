@@ -16,7 +16,17 @@ export type Server = {
   icon_url: string | null;
   owner_id: string;
   invite_code?: string;
+  invite_expires_at?: string | null;
+  invite_max_uses?: number | null;
+  invite_uses?: number;
   created_at?: string;
+};
+
+export type ServerEmoji = {
+  id: string;
+  server_id: string;
+  name: string;
+  url: string;
 };
 
 export type Channel = {

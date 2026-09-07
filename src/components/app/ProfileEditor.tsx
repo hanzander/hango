@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile, UserStatus } from "@/lib/types";
+import { useAppearance } from "@/components/ui/Appearance";
+import { ensureNotificationPermission } from "@/lib/desktop-notify";
 
 type ProfileEditorProps = {
   open: boolean;
@@ -35,6 +37,7 @@ export function ProfileEditor({
   const [bio, setBio] = useState(profile.bio ?? "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { theme, density, setTheme, setDensity } = useAppearance();
 
   useEffect(() => {
     if (!open) return;
@@ -216,6 +219,66 @@ export function ProfileEditor({
               className="w-full resize-none rounded-lg border border-border-strong bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-text-muted"
             />
           </label>
+
+          <div className="space-y-1.5">
+            <span className="text-xs text-text-muted">Appearance</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setTheme("dark")}
+                className={
+                  theme === "dark"
+                    ? "flex-1 rounded-lg bg-accent/20 py-2 text-xs text-accent"
+                    : "flex-1 rounded-lg border border-border py-2 text-xs text-text-secondary"
+                }
+              >
+                Dark
+              </button>
+              <button
+                type="button"
+                onClick={() => setTheme("light")}
+                className={
+                  theme === "light"
+                    ? "flex-1 rounded-lg bg-accent/20 py-2 text-xs text-accent"
+                    : "flex-1 rounded-lg border border-border py-2 text-xs text-text-secondary"
+                }
+              >
+                Light
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDensity("cozy")}
+                className={
+                  density === "cozy"
+                    ? "flex-1 rounded-lg bg-accent/20 py-2 text-xs text-accent"
+                    : "flex-1 rounded-lg border border-border py-2 text-xs text-text-secondary"
+                }
+              >
+                Cozy
+              </button>
+              <button
+                type="button"
+                onClick={() => setDensity("compact")}
+                className={
+                  density === "compact"
+                    ? "flex-1 rounded-lg bg-accent/20 py-2 text-xs text-accent"
+                    : "flex-1 rounded-lg border border-border py-2 text-xs text-text-secondary"
+                }
+              >
+                Compact
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void ensureNotificationPermission()}
+            className="w-full rounded-lg border border-border-strong py-2 text-xs text-text-secondary hover:text-text"
+          >
+            Enable desktop notifications
+          </button>
 
           {error && <p className="text-xs text-danger">{error}</p>}
 

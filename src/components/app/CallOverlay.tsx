@@ -628,6 +628,26 @@ export function CallOverlay({
     pttModeRef.current = pttMode;
   }, [pttMode]);
 
+  // Global voice keybinds: Ctrl+Shift+M mute, Ctrl+Shift+D deafen
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.code === "KeyM") {
+        e.preventDefault();
+        void toggleMic();
+      }
+      if (e.code === "KeyD") {
+        e.preventDefault();
+        void toggleDeafen();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
   useEffect(() => {
     if (!pttMode || status !== "live") return;
 
@@ -917,6 +937,9 @@ export function CallOverlay({
             {live ? `${peers.length} · ${connLabel}` : connLabel}
             {deafened ? " · Deafened" : ""}
             {pttMode ? (pttHeld ? " · PTT live" : " · PTT (hold Space)") : ""}
+            {peers.some((p) => p.screenOn)
+              ? ` · Watching ${peers.find((p) => p.screenOn && !p.isLocal)?.name || "screen"}`
+              : ""}
           </p>
         </div>
       </header>
@@ -978,7 +1001,9 @@ export function CallOverlay({
 
       <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4 pb-32">
         <div className={cn("grid w-full gap-3", gridClass)}>
-          {peers.map((p) => (
+          {[...peers]
+            .sort((a, b) => Number(b.screenOn) - Number(a.screenOn))
+            .map((p) => (
             <PeerTile
               key={p.identity}
               peer={p}

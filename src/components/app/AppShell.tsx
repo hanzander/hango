@@ -20,7 +20,13 @@ import { ProfileEditor } from "./ProfileEditor";
 import { UserProfilePopout } from "./UserProfilePopout";
 import { CreateChannelModal } from "./CreateChannelModal";
 import { RolesModal } from "./RolesModal";
+import { ServerSearch } from "./ServerSearch";
+import { EmojiManager } from "./EmojiManager";
+import { ThreadsPanel } from "./ThreadsPanel";
+import { InviteSettings } from "./InviteSettings";
 import { MembersPanel, type ServerMember } from "./MembersPanel";
+import { useRouter } from "next/navigation";
+import type { ServerRole } from "@/lib/types";
 import { useServerPresence } from "@/hooks/useServerPresence";
 import { createClient } from "@/lib/supabase/client";
 import { playJoinSound, playLeaveSound, unlockAudio } from "@/lib/call-sounds";
@@ -96,6 +102,13 @@ type AppShellProps = {
   onToggleCompact?: () => void;
   onSearchChange?: (q: string) => void;
   onTogglePins?: () => void;
+  onMarkServerRead?: () => void;
+  onUpdateTopic?: (topic: string) => void;
+  onKick?: (userId: string) => void;
+  onTimeout?: (userId: string, minutes: number) => void;
+  onAssignRole?: (userId: string, roleId: string) => void;
+  onMessageUser?: (userId: string) => void;
+  onServerUpdated?: (patch: Partial<Server>) => void;
   onSignOut?: () => void;
   onProfileSaved?: (next: Profile) => void;
 };
@@ -190,15 +203,24 @@ export function AppShell({
   onToggleCompact,
   onSearchChange,
   onTogglePins,
+  onMarkServerRead,
+  onUpdateTopic,
+  onKick,
+  onTimeout,
+  onAssignRole,
+  onMessageUser,
+  onServerUpdated,
   onSignOut,
   onProfileSaved,
 }: AppShellProps) {
+  const router = useRouter();
   const { toast } = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [voiceSession, setVoiceSession] = useState<VoiceSession | null>(null);
   const [callConnected, setCallConnected] = useState(false);
   const [callKey, setCallKey] = useState(0);
   const [serverMembers, setServerMembers] = useState<ServerMember[]>([]);
+  const [roles, setRoles] = useState<ServerRole[]>([]);
   const [liveRoster, setLiveRoster] = useState<
     { user_id: string; display_name: string }[]
   >([]);
@@ -206,6 +228,12 @@ export function AppShell({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [threadsOpen, setThreadsOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [topicEdit, setTopicEdit] = useState(false);
+  const [topicValue, setTopicValue] = useState(channel.topic ?? "");
   const [popoutProfile, setPopoutProfile] = useState<Profile | null>(null);
   const [localProfile, setLocalProfile] = useState<Profile | null>(
     profile ?? null,
@@ -214,6 +242,11 @@ export function AppShell({
   useEffect(() => {
     if (profile) setLocalProfile(profile);
   }, [profile]);
+
+  useEffect(() => {
+    setTopicValue(channel.topic ?? "");
+    setTopicEdit(false);
+  }, [channel.id, channel.topic]);
 
   const localName = localProfile?.display_name ?? displayName;
   const localAvatar = localProfile?.avatar_url ?? avatarUrl ?? null;
@@ -382,7 +415,17 @@ export function AppShell({
       setServerMembers(rows);
     }
 
+    async function loadRoles() {
+      const { data } = await supabase
+        .from("server_roles")
+        .select("*")
+        .eq("server_id", server.id)
+        .order("position");
+      if (!cancelled) setRoles((data as ServerRole[]) ?? []);
+    }
+
     void loadMembers();
+    void loadRoles();
     return () => {
       cancelled = true;
     };
@@ -472,6 +515,20 @@ export function AppShell({
             onMuteServer={demo ? undefined : onMuteServer}
             onCopyInvite={() => toast("Invite copied", "success")}
             onOpenRoles={demo ? undefined : () => setRolesOpen(true)}
+            onOpenSearch={demo ? undefined : () => setSearchOpen(true)}
+            onOpenEmoji={demo ? undefined : () => setEmojiOpen(true)}
+            onOpenThreads={
+              demo || isVoice ? undefined : () => setThreadsOpen(true)
+            }
+            onOpenInvite={
+              demo || server.owner_id !== userId
+                ? undefined
+                : () => setInviteOpen(true)
+            }
+            onMarkRead={demo ? undefined : onMarkServerRead}
+            onEditTopic={
+              demo || isVoice ? undefined : () => setTopicEdit(true)
+            }
           />
           {inCall && voiceSession && !demo && (
             <VoiceConnectedBar
@@ -679,7 +736,14 @@ export function AppShell({
         <MembersPanel
           serverMembers={serverMembers}
           speakingIds={speakingIds}
+          currentUserId={userId}
+          isOwner={server.owner_id === userId}
+          roles={roles}
           onOpenProfile={(id) => void openProfile(id)}
+          onKick={onKick}
+          onTimeout={onTimeout}
+          onAssignRole={onAssignRole}
+          onMessageUser={onMessageUser}
           online={(() => {
             const byId = new Map(online.map((u) => [u.user_id, u]));
             if (inCall && voiceSession && userId) {
@@ -705,6 +769,48 @@ export function AppShell({
             return Array.from(byId.values());
           })()}
         />
+      )}
+
+      {!demo && topicEdit && onUpdateTopic && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/70"
+            onClick={() => setTopicEdit(false)}
+          />
+          <form
+            className="relative w-full max-w-md rounded-2xl border border-border bg-bg-elevated p-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              onUpdateTopic(topicValue.trim());
+              setTopicEdit(false);
+            }}
+          >
+            <h2 className="text-sm font-semibold">Channel topic</h2>
+            <input
+              value={topicValue}
+              onChange={(e) => setTopicValue(e.target.value)}
+              className="mt-3 w-full rounded-lg border border-border-strong bg-bg px-3 py-2 text-sm outline-none"
+              maxLength={120}
+              autoFocus
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTopicEdit(false)}
+                className="text-sm text-text-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-accent px-3 py-1.5 text-sm text-accent-fg"
+              >
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
       {!demo && (
@@ -738,6 +844,51 @@ export function AppShell({
           onClose={() => setRolesOpen(false)}
           serverId={server.id}
           isOwner={server.owner_id === userId}
+        />
+      )}
+
+      {!demo && (
+        <ServerSearch
+          open={searchOpen}
+          onClose={() => setSearchOpen(false)}
+          serverId={server.id}
+          onJump={(channelId) => {
+            router.push(`/app/${server.id}/${channelId}`);
+          }}
+        />
+      )}
+
+      {!demo && (
+        <EmojiManager
+          open={emojiOpen}
+          onClose={() => setEmojiOpen(false)}
+          serverId={server.id}
+          isOwner={server.owner_id === userId}
+          onPick={(em) => {
+            void onSend({ content: `:${em.name}:` });
+          }}
+        />
+      )}
+
+      {!demo && threadsOpen && (
+        <div className="pointer-events-none fixed inset-0 z-40">
+          <div className="pointer-events-auto absolute inset-y-0 right-56 top-0 hidden lg:block">
+            <ThreadsPanel
+              open={threadsOpen}
+              onClose={() => setThreadsOpen(false)}
+              channelId={channel.id}
+              onOpenRoot={() => setThreadsOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {!demo && (
+        <InviteSettings
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          server={server}
+          onUpdated={(patch) => onServerUpdated?.(patch)}
         />
       )}
 

@@ -23,6 +23,12 @@ type ChannelListProps = {
   onMuteServer?: (mute: boolean) => void;
   onCopyInvite?: () => void;
   onOpenRoles?: () => void;
+  onOpenSearch?: () => void;
+  onOpenEmoji?: () => void;
+  onOpenThreads?: () => void;
+  onOpenInvite?: () => void;
+  onMarkRead?: () => void;
+  onEditTopic?: () => void;
 };
 
 export function ChannelList({
@@ -41,6 +47,12 @@ export function ChannelList({
   onMuteServer,
   onCopyInvite,
   onOpenRoles,
+  onOpenSearch,
+  onOpenEmoji,
+  onOpenThreads,
+  onOpenInvite,
+  onMarkRead,
+  onEditTopic,
 }: ChannelListProps) {
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState<{
@@ -84,13 +96,73 @@ export function ChannelList({
             ← Leave server
           </Link>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          {onOpenSearch && (
+            <button
+              type="button"
+              title="Search server"
+              onClick={onOpenSearch}
+              className="rounded-md px-1.5 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+            >
+              Search
+            </button>
+          )}
+          {onMarkRead && (
+            <button
+              type="button"
+              title="Mark as read"
+              onClick={onMarkRead}
+              className="rounded-md px-1.5 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+            >
+              Read
+            </button>
+          )}
+          {onOpenEmoji && (
+            <button
+              type="button"
+              title="Emoji"
+              onClick={onOpenEmoji}
+              className="rounded-md px-1.5 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+            >
+              Emoji
+            </button>
+          )}
+          {onOpenThreads && (
+            <button
+              type="button"
+              title="Threads"
+              onClick={onOpenThreads}
+              className="rounded-md px-1.5 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+            >
+              Threads
+            </button>
+          )}
+          {onOpenInvite && (
+            <button
+              type="button"
+              title="Invite settings"
+              onClick={onOpenInvite}
+              className="rounded-md px-1.5 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+            >
+              Invites
+            </button>
+          )}
+          {onEditTopic && (
+            <button
+              type="button"
+              title="Edit topic"
+              onClick={onEditTopic}
+              className="rounded-md px-1.5 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+            >
+              Topic
+            </button>
+          )}
           {onMuteServer && (
             <button
               type="button"
               title={serverMuted ? "Unmute server" : "Mute server"}
               onClick={() => onMuteServer(!serverMuted)}
-              className="rounded-md px-2 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+              className="rounded-md px-1.5 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
             >
               {serverMuted ? "Unmute" : "Mute"}
             </button>
@@ -100,7 +172,7 @@ export function ChannelList({
               type="button"
               title="Roles"
               onClick={onOpenRoles}
-              className="rounded-md px-2 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+              className="rounded-md px-1.5 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
             >
               Roles
             </button>

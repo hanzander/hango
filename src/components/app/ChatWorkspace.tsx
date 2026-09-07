@@ -25,6 +25,11 @@ import { playMessageNotification } from "@/lib/call-sounds";
 import { useToast } from "@/components/ui/Toast";
 import type { SendPayload } from "@/components/app/MessageComposer";
 import { extractUrls } from "@/lib/embeds";
+import {
+  ensureNotificationPermission,
+  notifyDesktop,
+} from "@/lib/desktop-notify";
+import { useIdleStatus } from "@/hooks/useIdleStatus";
 
 type ChatWorkspaceProps = {
   serverId?: string;
@@ -133,8 +138,31 @@ export function ChatWorkspace({
         next.delete(activeChannel.id);
         return next;
       });
+      // Persist read state
+      if (configured && profile?.id) {
+        const supabase = createClient();
+        void supabase.from("channel_read_state").upsert({
+          user_id: profile.id,
+          channel_id: activeChannel.id,
+          last_read_at: new Date().toISOString(),
+        });
+      }
     }
-  }, [activeChannel?.id]);
+  }, [activeChannel?.id, configured, profile?.id]);
+
+  useIdleStatus({
+    userId: profile?.id ?? "",
+    enabled: configured && Boolean(profile?.id),
+    status: profile?.status,
+    onStatus: (s) =>
+      setProfile((prev) => (prev ? { ...prev, status: s } : prev)),
+  });
+
+  // Request desktop notification permission once after login
+  useEffect(() => {
+    if (!configured || !profile?.id) return;
+    void ensureNotificationPermission();
+  }, [configured, profile?.id]);
 
   // Keep URL in sync
   useEffect(() => {
@@ -557,6 +585,14 @@ export function ChatWorkspace({
 
           if (mentionsOnly && !mentioned) return;
           playMessageNotification();
+          void ensureNotificationPermission().then((perm) => {
+            if (perm !== "granted") return;
+            notifyDesktop(
+              `New message in #${channels.find((c) => c.id === row.channel_id)?.name ?? "chat"}`,
+              row.content.slice(0, 120) || "Attachment",
+              { tag: `msg-${row.channel_id}` },
+            );
+          });
         },
       )
       .subscribe();
@@ -1124,6 +1160,121 @@ export function ChatWorkspace({
     setProfile((prev) => (prev ? { ...prev, ...next } : next));
   }, []);
 
+  const handleMarkServerRead = useCallback(async () => {
+    if (!activeServer) return;
+    const ids = channels
+      .filter((c) => c.server_id === activeServer.id)
+      .map((c) => c.id);
+    setUnreadChannels((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+    if (configured && profile?.id) {
+      const supabase = createClient();
+      const now = new Date().toISOString();
+      await supabase.from("channel_read_state").upsert(
+        ids.map((channel_id) => ({
+          user_id: profile.id,
+          channel_id,
+          last_read_at: now,
+        })),
+      );
+    }
+    toast("Marked as read", "success");
+  }, [activeServer, channels, configured, profile?.id, toast]);
+
+  const handleUpdateTopic = useCallback(
+    async (topic: string) => {
+      if (!activeChannel || !configured) return;
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("channels")
+        .update({ topic: topic || null })
+        .eq("id", activeChannel.id);
+      if (error) {
+        toast(error.message, "danger");
+        return;
+      }
+      setChannels((prev) =>
+        prev.map((c) =>
+          c.id === activeChannel.id ? { ...c, topic: topic || null } : c,
+        ),
+      );
+      toast("Topic updated", "success");
+    },
+    [activeChannel, configured, toast],
+  );
+
+  const handleKick = useCallback(
+    async (userId: string) => {
+      if (!activeServer) return;
+      const supabase = createClient();
+      const { error } = await supabase.rpc("kick_member", {
+        p_server_id: activeServer.id,
+        p_user_id: userId,
+      });
+      if (error) {
+        toast(error.message, "danger");
+        return;
+      }
+      toast("Member kicked", "success");
+    },
+    [activeServer, toast],
+  );
+
+  const handleTimeout = useCallback(
+    async (userId: string, minutes: number) => {
+      if (!activeServer) return;
+      const supabase = createClient();
+      const { error } = await supabase.rpc("timeout_member", {
+        p_server_id: activeServer.id,
+        p_user_id: userId,
+        p_minutes: minutes,
+      });
+      if (error) {
+        toast(error.message, "danger");
+        return;
+      }
+      toast(`Timed out ${minutes}m`, "success");
+    },
+    [activeServer, toast],
+  );
+
+  const handleAssignRole = useCallback(
+    async (userId: string, roleId: string) => {
+      if (!activeServer) return;
+      const supabase = createClient();
+      const { error } = await supabase.from("member_roles").upsert({
+        server_id: activeServer.id,
+        user_id: userId,
+        role_id: roleId,
+      });
+      if (error) {
+        toast(error.message, "danger");
+        return;
+      }
+      toast("Role assigned", "success");
+    },
+    [activeServer, toast],
+  );
+
+  const handleOpenDm = useCallback(
+    async (otherUserId: string) => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc("open_dm", {
+        p_other_user: otherUserId,
+      });
+      if (error) {
+        toast(error.message, "danger");
+        return;
+      }
+      const ch = Array.isArray(data) ? data[0] : data;
+      if (ch?.id) router.push(`/app/dm/${ch.id}`);
+    },
+    [router, toast],
+  );
+
   const handleToggleCompact = useCallback(() => {
     setCompact((prev) => {
       const next = !prev;
@@ -1188,6 +1339,19 @@ export function ChatWorkspace({
         setPinsOnly((v) => !v);
         setSearchQuery("");
       }}
+      onMarkServerRead={handleMarkServerRead}
+      onUpdateTopic={handleUpdateTopic}
+      onKick={handleKick}
+      onTimeout={handleTimeout}
+      onAssignRole={handleAssignRole}
+      onMessageUser={handleOpenDm}
+      onServerUpdated={(patch) =>
+        setServers((prev) =>
+          prev.map((s) =>
+            s.id === activeServer.id ? { ...s, ...patch } : s,
+          ),
+        )
+      }
       onSignOut={handleSignOut}
       onProfileSaved={handleProfileSaved}
     />

@@ -2,9 +2,14 @@
 
 import { useMemo, type ReactNode } from "react";
 import type { PresenceUser } from "@/hooks/useServerPresence";
-import type { Profile } from "@/lib/types";
+import type { Profile, ServerRole } from "@/lib/types";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
+import {
+  ContextMenuPortal,
+  useContextMenu,
+  type ContextMenuItem,
+} from "@/components/ui/ContextMenu";
 
 export type ServerMember = Pick<
   Profile,
@@ -14,9 +19,15 @@ export type ServerMember = Pick<
 type MembersPanelProps = {
   serverMembers: ServerMember[];
   online: PresenceUser[];
-  /** LiveKit identities currently speaking */
   speakingIds?: string[];
+  currentUserId?: string;
+  isOwner?: boolean;
+  roles?: ServerRole[];
   onOpenProfile?: (userId: string) => void;
+  onKick?: (userId: string) => void;
+  onTimeout?: (userId: string, minutes: number) => void;
+  onAssignRole?: (userId: string, roleId: string) => void;
+  onMessageUser?: (userId: string) => void;
 };
 
 type Row = {
@@ -31,9 +42,17 @@ export function MembersPanel({
   serverMembers,
   online,
   speakingIds = [],
+  currentUserId,
+  isOwner,
+  roles = [],
   onOpenProfile,
+  onKick,
+  onTimeout,
+  onAssignRole,
+  onMessageUser,
 }: MembersPanelProps) {
   const speaking = useMemo(() => new Set(speakingIds), [speakingIds]);
+  const { menu, open, close } = useContextMenu();
 
   const rows = useMemo(() => {
     const presenceById = new Map(online.map((m) => [m.user_id, m]));
@@ -72,6 +91,39 @@ export function MembersPanel({
   const onlineRows = rows.filter((r) => r.status === "online");
   const offline = rows.filter((r) => r.status === "offline");
 
+  function menuFor(m: Row): ContextMenuItem[] {
+    const items: ContextMenuItem[] = [
+      {
+        label: "Profile",
+        onClick: () => onOpenProfile?.(m.user_id),
+      },
+    ];
+    if (m.user_id !== currentUserId) {
+      items.push({
+        label: "Message",
+        onClick: () => onMessageUser?.(m.user_id),
+      });
+    }
+    if (isOwner && m.user_id !== currentUserId) {
+      for (const role of roles) {
+        items.push({
+          label: `Assign ${role.name}`,
+          onClick: () => onAssignRole?.(m.user_id, role.id),
+        });
+      }
+      items.push({
+        label: "Timeout 10m",
+        onClick: () => onTimeout?.(m.user_id, 10),
+      });
+      items.push({
+        label: "Kick",
+        danger: true,
+        onClick: () => onKick?.(m.user_id),
+      });
+    }
+    return items;
+  }
+
   return (
     <aside className="hidden h-full w-56 shrink-0 flex-col border-l border-border bg-sidebar lg:flex">
       <div className="flex h-12 items-center border-b border-border px-4">
@@ -82,9 +134,7 @@ export function MembersPanel({
       <div className="hango-scroll flex-1 overflow-y-auto px-2 py-3">
         <Section title={`Online — ${onlineRows.length}`}>
           {onlineRows.length === 0 ? (
-            <li className="px-2 py-1 text-xs text-text-muted">
-              Nobody online
-            </li>
+            <li className="px-2 py-1 text-xs text-text-muted">Nobody online</li>
           ) : (
             onlineRows.map((m) => (
               <MemberRow
@@ -92,6 +142,7 @@ export function MembersPanel({
                 member={m}
                 speaking={speaking.has(m.user_id)}
                 onOpen={() => onOpenProfile?.(m.user_id)}
+                onContextMenu={(e) => open(e, menuFor(m))}
               />
             ))
           )}
@@ -107,11 +158,13 @@ export function MembersPanel({
                 member={m}
                 speaking={false}
                 onOpen={() => onOpenProfile?.(m.user_id)}
+                onContextMenu={(e) => open(e, menuFor(m))}
               />
             ))
           )}
         </Section>
       </div>
+      <ContextMenuPortal menu={menu} onClose={close} />
     </aside>
   );
 }
@@ -137,10 +190,12 @@ function MemberRow({
   member,
   speaking,
   onOpen,
+  onContextMenu,
 }: {
   member: Row;
   speaking: boolean;
   onOpen?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const dim = member.status === "offline";
   return (
@@ -148,41 +203,42 @@ function MemberRow({
       <button
         type="button"
         onClick={onOpen}
+        onContextMenu={onContextMenu}
         className={cn(
           "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-bg-hover",
           dim && "opacity-50",
         )}
       >
-      <div className="relative shrink-0">
-        <div
-          className={cn(
-            "rounded-full transition-[box-shadow] duration-150",
-            speaking &&
-              "shadow-[0_0_0_2px_rgba(52,211,153,0.95),0_0_12px_rgba(52,211,153,0.55)]",
-          )}
-        >
-          <Avatar
-            name={member.display_name}
-            src={member.avatar_url}
-            size="sm"
+        <div className="relative shrink-0">
+          <div
+            className={cn(
+              "rounded-full transition-[box-shadow] duration-150",
+              speaking &&
+                "shadow-[0_0_0_2px_rgba(52,211,153,0.95),0_0_12px_rgba(52,211,153,0.55)]",
+            )}
+          >
+            <Avatar
+              name={member.display_name}
+              src={member.avatar_url}
+              size="sm"
+            />
+          </div>
+          <span
+            className={cn(
+              "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-sidebar",
+              member.status === "online" ? "bg-emerald-500/90" : "bg-text-muted",
+            )}
           />
         </div>
-        <span
-          className={cn(
-            "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-sidebar",
-            member.status === "online" ? "bg-emerald-500/90" : "bg-text-muted",
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm text-text">{member.display_name}</p>
+          {member.inVoice && (
+            <p className="flex items-center gap-1 truncate text-[10px] text-emerald-400/80">
+              <VoiceGlyph />
+              Voice
+            </p>
           )}
-        />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-text">{member.display_name}</p>
-        {member.inVoice && (
-          <p className="flex items-center gap-1 truncate text-[10px] text-emerald-400/80">
-            <VoiceGlyph />
-            Voice
-          </p>
-        )}
-      </div>
+        </div>
       </button>
     </li>
   );
