@@ -1,22 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0b0b0c;
-  --bg-elevated: #121214;
-  --bg-subtle: #18181b;
-  --bg-hover: #1f1f23;
-  --bg-active: #27272a;
-  --border: #232328;
-  --border-strong: #2e2e33;
+  --bg: #0c0b0a;
+  --bg-elevated: #141312;
+  --bg-subtle: #1a1917;
+  --bg-hover: #221f1c;
+  --bg-active: #2a2724;
+  --border: #2a2724;
+  --border-strong: #36322e;
   --text: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --text-secondary: #a8a29e;
+  --text-muted: #78716c;
   --accent: #ffffff;
   --accent-fg: #000000;
   --danger: #ef4444;
-  --rail: #09090b;
-  --sidebar: #111113;
-  --chat: #0e0e10;
+  --rail: #0a0908;
+  --sidebar: #121110;
+  --chat: #100f0e;
 }
 
 @theme inline {
@@ -185,6 +185,50 @@ html[data-density="compact"] .hango-msg {
   transform: translateY(0) scale(0.98);
 }
 
+/* Soft warm wash over chrome (not flat black) */
+.hango-sidebar-wash {
+  background:
+    radial-gradient(
+      ellipse 90% 55% at 0% 0%,
+      rgba(255, 196, 140, 0.045),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 60% 40% at 100% 100%,
+      rgba(120, 90, 60, 0.04),
+      transparent 55%
+    ),
+    var(--sidebar);
+}
+
+.hango-chat-wash {
+  background:
+    radial-gradient(
+      ellipse 75% 45% at 50% -8%,
+      rgba(255, 210, 160, 0.04),
+      transparent 52%
+    ),
+    var(--chat);
+}
+
+.hango-rail-wash {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 200, 150, 0.03),
+      transparent 40%
+    ),
+    var(--rail);
+}
+
+.hango-typing {
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s ease,
+    max-height 0.28s ease,
+    padding 0.28s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hango-anim-fade,
   .hango-anim-pop,
@@ -196,6 +240,10 @@ html[data-density="compact"] .hango-msg {
   .hango-interactive:hover,
   .hango-interactive:active {
     transform: none;
+  }
+
+  .hango-typing {
+    transition: none;
   }
 }
 

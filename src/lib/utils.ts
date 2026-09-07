@@ -32,6 +32,37 @@ export function formatMessageTime(iso: string) {
   })} ${time}`;
 }
 
+export function sameCalendarDay(aIso: string, bIso: string) {
+  const a = new Date(aIso);
+  const b = new Date(bIso);
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/** Discord-style day label for chat dividers. */
+export function formatMessageDateDivider(iso: string) {
+  const date = new Date(iso);
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startMsg = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDiff = Math.round(
+    (startToday.getTime() - startMsg.getTime()) / (24 * 60 * 60 * 1000),
+  );
+
+  if (dayDiff === 0) return "Today";
+  if (dayDiff === 1) return "Yesterday";
+
+  return date.toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
 export function isSupabaseConfigured() {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&

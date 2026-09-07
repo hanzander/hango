@@ -18,7 +18,7 @@ export function ServerRail({
   onAddServer,
 }: ServerRailProps) {
   return (
-    <aside className="flex h-full w-[68px] shrink-0 flex-col items-center gap-2 border-r border-border bg-rail py-3">
+    <aside className="hango-rail-wash flex h-full w-[68px] shrink-0 flex-col items-center gap-2 border-r border-border py-3">
       <Link
         href="/"
         className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-sm font-semibold tracking-tight text-accent-fg transition-all hover:rounded-xl"

@@ -123,7 +123,7 @@ export function ChannelList({
   }
 
   return (
-    <aside className="relative z-20 flex min-h-0 flex-1 flex-col overflow-hidden border-r border-border bg-sidebar">
+    <aside className="relative z-20 flex min-h-0 flex-1 flex-col overflow-hidden border-r border-border bg-transparent">
       <div ref={serverMenuRef} className="relative shrink-0 border-b border-border">
         <button
           type="button"

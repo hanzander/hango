@@ -174,7 +174,7 @@ export function MembersPanel({
   }
 
   return (
-    <aside className="hidden h-full w-60 shrink-0 flex-col border-l border-border bg-sidebar lg:flex">
+    <aside className="hango-sidebar-wash hidden h-full w-60 shrink-0 flex-col border-l border-border lg:flex">
       <div className="flex h-12 items-center border-b border-border px-4">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
           Members — {rows.length}

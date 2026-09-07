@@ -1456,6 +1456,7 @@ export function ChatWorkspace({
 
   return (
     <AppShell
+      servers={servers}
       server={activeServer}
       channels={serverChannels}
       channel={activeChannel}
@@ -1513,6 +1514,30 @@ export function ChatWorkspace({
           ),
         )
       }
+      onServersChanged={async () => {
+        if (!configured) return;
+        const supabase = createClient();
+        const { data: memberRows } = await supabase
+          .from("server_members")
+          .select("server_id");
+        const serverIds = (memberRows ?? []).map((m) => m.server_id);
+        if (!serverIds.length) {
+          setServers([]);
+          setChannels([]);
+          return;
+        }
+        const { data: serverRows } = await supabase
+          .from("servers")
+          .select("*")
+          .in("id", serverIds);
+        const { data: channelRows } = await supabase
+          .from("channels")
+          .select("*")
+          .in("server_id", serverIds)
+          .order("position");
+        setServers((serverRows as Server[]) ?? []);
+        setChannels((channelRows as Channel[]) ?? []);
+      }}
       onSignOut={handleSignOut}
       onProfileSaved={handleProfileSaved}
     />

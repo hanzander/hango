@@ -9,7 +9,12 @@ import {
   type ReactNode,
 } from "react";
 import type { Message, MessageAttachment, MessageEmbed } from "@/lib/types";
-import { formatMessageTime, cn } from "@/lib/utils";
+import {
+  formatMessageDateDivider,
+  formatMessageTime,
+  sameCalendarDay,
+  cn,
+} from "@/lib/utils";
 import { parseDiscordMarkdown } from "@/lib/markdown";
 import { Avatar } from "@/components/ui/Avatar";
 import { LinkEmbedCard, extractUrls, useFetchEmbed } from "@/lib/embeds";
@@ -73,6 +78,19 @@ export function MessagePane({
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
     null,
   );
+  const [typingShown, setTypingShown] = useState<string[]>([]);
+  const [typingVisible, setTypingVisible] = useState(false);
+
+  useEffect(() => {
+    if (typingNames.length > 0) {
+      setTypingShown(typingNames);
+      setTypingVisible(true);
+      return;
+    }
+    setTypingVisible(false);
+    const t = window.setTimeout(() => setTypingShown([]), 280);
+    return () => window.clearTimeout(t);
+  }, [typingNames]);
 
   function isNearBottom(el: HTMLDivElement) {
     return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
@@ -165,8 +183,8 @@ export function MessagePane({
   }, [messages, pinsOnly, searchQuery]);
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-chat">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/80 bg-chat/80 px-4 backdrop-blur-sm">
+    <div className="hango-chat-wash relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/80 bg-transparent px-4 backdrop-blur-sm">
         {onSearchChange && searchQuery !== undefined && searchQuery.length > 0 ? (
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <svg
@@ -251,46 +269,66 @@ export function MessagePane({
           <ul className={cn(compact ? "space-y-0.5" : "space-y-3")}>
             {visible.map((message, i) => {
               const prev = visible[i - 1];
+              const showDate =
+                !prev || !sameCalendarDay(prev.created_at, message.created_at);
               const grouped =
                 !!prev &&
+                !showDate &&
                 prev.author_id === message.author_id &&
                 new Date(message.created_at).getTime() -
                   new Date(prev.created_at).getTime() <
                   7 * 60 * 1000;
               return (
-                <MessageRow
-                  key={message.id}
-                  message={message}
-                  grouped={grouped}
-                  compact={compact}
-                  currentUserId={currentUserId}
-                  isOwn={message.author_id === currentUserId}
-                  canManageMessages={canManageMessages}
-                  editing={editingId === message.id}
-                  editValue={editValue}
-                  onEditValue={setEditValue}
-                  onStartEdit={() => {
-                    setEditingId(message.id);
-                    setEditValue(message.content);
-                  }}
-                  onCancelEdit={() => setEditingId(null)}
-                  onSaveEdit={async () => {
-                    if (!onEdit || !editValue.trim()) return;
-                    await onEdit(message.id, editValue.trim());
-                    setEditingId(null);
-                  }}
-                  onDelete={() => onDelete?.(message.id)}
-                  onReply={() => onReply?.(message)}
-                  onReact={(emoji) => onReact?.(message.id, emoji)}
-                  onPin={() => onPin?.(message.id, !message.pinned_at)}
-                  onStartThread={() => onStartThread?.(message)}
-                  onOpenAttachment={(a) =>
-                    setLightbox({ src: a.url, alt: a.filename })
-                  }
-                  onOpenProfile={() =>
-                    onOpenProfile?.(message.author_id)
-                  }
-                />
+                <li key={message.id} className="list-none">
+                  {showDate && (
+                    <div
+                      className={cn(
+                        "mb-3 flex items-center gap-3",
+                        i > 0 && "mt-5",
+                      )}
+                      role="separator"
+                      aria-label={formatMessageDateDivider(message.created_at)}
+                    >
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="shrink-0 text-[11px] font-medium tracking-wide text-text-muted">
+                        {formatMessageDateDivider(message.created_at)}
+                      </span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                  )}
+                  <MessageRow
+                    message={message}
+                    grouped={grouped}
+                    compact={compact}
+                    currentUserId={currentUserId}
+                    isOwn={message.author_id === currentUserId}
+                    canManageMessages={canManageMessages}
+                    editing={editingId === message.id}
+                    editValue={editValue}
+                    onEditValue={setEditValue}
+                    onStartEdit={() => {
+                      setEditingId(message.id);
+                      setEditValue(message.content);
+                    }}
+                    onCancelEdit={() => setEditingId(null)}
+                    onSaveEdit={async () => {
+                      if (!onEdit || !editValue.trim()) return;
+                      await onEdit(message.id, editValue.trim());
+                      setEditingId(null);
+                    }}
+                    onDelete={() => onDelete?.(message.id)}
+                    onReply={() => onReply?.(message)}
+                    onReact={(emoji) => onReact?.(message.id, emoji)}
+                    onPin={() => onPin?.(message.id, !message.pinned_at)}
+                    onStartThread={() => onStartThread?.(message)}
+                    onOpenAttachment={(a) =>
+                      setLightbox({ src: a.url, alt: a.filename })
+                    }
+                    onOpenProfile={() =>
+                      onOpenProfile?.(message.author_id)
+                    }
+                  />
+                </li>
               );
             })}
             <div ref={bottomRef} aria-hidden />
@@ -308,11 +346,30 @@ export function MessagePane({
         </button>
       )}
 
-      {typingNames.length > 0 && (
-        <p className="px-4 pb-1 text-[11px] text-text-muted">
-          {formatTyping(typingNames)}
+      <div
+        className={cn(
+          "hango-typing overflow-hidden px-4",
+          typingVisible
+            ? "max-h-8 translate-y-0 pb-1 opacity-100"
+            : "max-h-0 -translate-y-1 pb-0 opacity-0",
+        )}
+        aria-live="polite"
+      >
+        <p className="flex items-center gap-1.5 text-[11px] text-text-muted">
+          <span className="inline-flex gap-0.5" aria-hidden>
+            <span className="h-1 w-1 animate-pulse rounded-full bg-text-muted" />
+            <span
+              className="h-1 w-1 animate-pulse rounded-full bg-text-muted"
+              style={{ animationDelay: "120ms" }}
+            />
+            <span
+              className="h-1 w-1 animate-pulse rounded-full bg-text-muted"
+              style={{ animationDelay: "240ms" }}
+            />
+          </span>
+          {formatTyping(typingShown)}
         </p>
-      )}
+      </div>
 
       <Lightbox
         src={lightbox?.src ?? null}
@@ -392,7 +449,7 @@ function MessageRow({
   const liveEmbed = useFetchEmbed(firstUrl);
 
   return (
-    <li
+    <div
       className={cn(
         "hango-msg group relative flex gap-3 rounded-xl px-2 py-1 transition-colors duration-150 hover:bg-white/[0.035]",
         grouped && !compact && "-mt-0.5",
@@ -432,23 +489,30 @@ function MessageRow({
           </button>
         )}
         {!grouped && (
-          <div className="mb-0.5 flex items-baseline gap-2">
-            <button
-              type="button"
-              onClick={onOpenProfile}
-              className="text-[15px] font-semibold text-text hover:underline"
-            >
-              {name}
-            </button>
-            <time className="text-[11px] text-text-muted">
-              {formatMessageTime(message.created_at)}
-            </time>
-            {message.edited_at && (
-              <span className="text-[10px] text-text-muted">(edited)</span>
-            )}
-            {message.pinned_at && (
-              <span className="text-[10px] text-amber-300/90">Pinned</span>
-            )}
+          <div className="mb-0.5">
+            <div className="flex items-baseline gap-2">
+              <button
+                type="button"
+                onClick={onOpenProfile}
+                className="text-[15px] font-semibold text-text hover:underline"
+              >
+                {name}
+              </button>
+              <time className="text-[11px] text-text-muted">
+                {formatMessageTime(message.created_at)}
+              </time>
+              {message.edited_at && (
+                <span className="text-[10px] text-text-muted">(edited)</span>
+              )}
+              {message.pinned_at && (
+                <span className="text-[10px] text-amber-300/90">Pinned</span>
+              )}
+            </div>
+            {message.author?.custom_status ? (
+              <p className="mt-0.5 truncate text-[11px] leading-snug text-text-muted">
+                {message.author.custom_status}
+              </p>
+            ) : null}
           </div>
         )}
 
@@ -558,30 +622,41 @@ function MessageRow({
         )}
       </div>
 
-      <div className="absolute -top-3 right-2 hidden items-center gap-0.5 rounded-md border border-border bg-bg-elevated p-0.5 shadow-lg group-hover:flex">
+      <div
+        className={cn(
+          "absolute -top-3.5 right-3 z-10 flex items-center gap-0.5 rounded-lg border border-border-strong",
+          "bg-[#1c1a18]/95 p-0.5 shadow-[0_10px_28px_rgba(0,0,0,0.5)] backdrop-blur-md",
+          "opacity-0 translate-y-1 scale-[0.98] transition-all duration-150",
+          "group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100",
+          "focus-within:translate-y-0 focus-within:scale-100 focus-within:opacity-100",
+        )}
+      >
         {QUICK_EMOJIS.map((e) => (
           <button
             key={e}
             type="button"
-            className="rounded px-1 py-0.5 text-sm hover:bg-bg-hover"
+            className="rounded-md px-1.5 py-1 text-sm transition hover:bg-white/10"
             onClick={() => onReact(e)}
             title="Add reaction"
           >
             {e}
           </button>
         ))}
+        <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
         <button
           type="button"
-          className="rounded px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text"
+          className="rounded-md px-2 py-1 text-[11px] font-medium text-text-secondary transition hover:bg-white/10 hover:text-text"
           onClick={onReply}
+          title="Reply"
         >
           Reply
         </button>
         {onPin && (
           <button
             type="button"
-            className="rounded px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text"
+            className="rounded-md px-2 py-1 text-[11px] font-medium text-text-secondary transition hover:bg-white/10 hover:text-text"
             onClick={onPin}
+            title={message.pinned_at ? "Unpin" : "Pin"}
           >
             {message.pinned_at ? "Unpin" : "Pin"}
           </button>
@@ -589,8 +664,9 @@ function MessageRow({
         {onStartThread && (
           <button
             type="button"
-            className="rounded px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text"
+            className="rounded-md px-2 py-1 text-[11px] font-medium text-text-secondary transition hover:bg-white/10 hover:text-text"
             onClick={onStartThread}
+            title="Start thread"
           >
             Thread
           </button>
@@ -598,8 +674,9 @@ function MessageRow({
         {isOwn && (
           <button
             type="button"
-            className="rounded px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text"
+            className="rounded-md px-2 py-1 text-[11px] font-medium text-text-secondary transition hover:bg-white/10 hover:text-text"
             onClick={onStartEdit}
+            title="Edit"
           >
             Edit
           </button>
@@ -607,14 +684,15 @@ function MessageRow({
         {(isOwn || canManageMessages) && (
           <button
             type="button"
-            className="rounded px-1.5 py-0.5 text-[11px] text-red-300 hover:bg-red-500/10"
+            className="rounded-md px-2 py-1 text-[11px] font-medium text-red-300/90 transition hover:bg-red-500/15 hover:text-red-200"
             onClick={onDelete}
+            title="Delete"
           >
             Delete
           </button>
         )}
       </div>
-    </li>
+    </div>
   );
 }
 

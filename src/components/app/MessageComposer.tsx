@@ -195,7 +195,7 @@ export function MessageComposer({
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
       className={cn(
-        "relative shrink-0 border-t border-border/80 bg-chat px-4 pb-3 pt-3",
+        "relative shrink-0 border-t border-border/80 bg-transparent px-4 pb-3 pt-3",
         dragging && "bg-emerald-500/[0.04]",
       )}
     >
