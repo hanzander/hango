@@ -166,8 +166,13 @@ export function AppShell({
 
   const inCall = voiceSession != null;
   const isVoice = (channel.kind ?? "text") === "voice";
-  const viewingCallUi =
-    inCall && voiceSession != null && channel.id === voiceSession.channelId;
+  // Full call UI only on the connected voice channel; PiP on every other channel (all text chats)
+  const viewingCallUi = Boolean(
+    inCall &&
+      voiceSession &&
+      isVoice &&
+      channel.id === voiceSession.channelId,
+  );
   const homeHref = demo ? "/app/demo" : "/app";
 
   useEffect(() => {

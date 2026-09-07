@@ -9,6 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ConnectionState,
   Room,
@@ -1029,12 +1030,17 @@ const PIP_H = 220;
 
 function DraggablePip({ children }: { children: ReactNode }) {
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
   const drag = useRef<{
     ox: number;
     oy: number;
     left: number;
     top: number;
   } | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     const handle = (e.target as HTMLElement).closest("[data-pip-drag]");
@@ -1072,9 +1078,9 @@ function DraggablePip({ children }: { children: ReactNode }) {
     }
   };
 
-  return (
+  const node = (
     <div
-      className="fixed z-[70]"
+      className="pointer-events-auto fixed z-[70]"
       style={
         pos
           ? { left: pos.left, top: pos.top, width: PIP_W, height: PIP_H }
@@ -1088,6 +1094,10 @@ function DraggablePip({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
+
+  // Portal to body so PiP shows over every text channel, not only #general
+  if (!mounted || typeof document === "undefined") return null;
+  return createPortal(node, document.body);
 }
 
 function friendlyDeviceError(err: unknown, kind: string) {

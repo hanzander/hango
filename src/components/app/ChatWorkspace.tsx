@@ -73,13 +73,30 @@ export function ChatWorkspace({
     );
   }, [serverChannels, resolvedChannelId]);
 
-  // Keep URL in sync with resolved server/channel (skip mock demo route)
+  // Keep URL in sync — only when the URL channel is missing/invalid (don't bounce valid text channels)
   useEffect(() => {
-    if (demo || !activeServer || !activeChannel) return;
-    if (serverId !== activeServer.id || channelId !== activeChannel.id) {
-      router.replace(`/app/${activeServer.id}/${activeChannel.id}`);
+    if (demo || !activeServer || !serverChannels.length) return;
+
+    if (!channelId) {
+      const fallback =
+        serverChannels.find((c) => (c.kind ?? "text") === "text") ??
+        serverChannels[0];
+      if (fallback) {
+        router.replace(`/app/${activeServer.id}/${fallback.id}`);
+      }
+      return;
     }
-  }, [demo, activeServer, activeChannel, serverId, channelId, router]);
+
+    const exists = serverChannels.some((c) => c.id === channelId);
+    if (!exists) {
+      const fallback =
+        serverChannels.find((c) => (c.kind ?? "text") === "text") ??
+        serverChannels[0];
+      if (fallback) {
+        router.replace(`/app/${activeServer.id}/${fallback.id}`);
+      }
+    }
+  }, [demo, activeServer, serverChannels, channelId, router]);
 
   const [demoMessages, setDemoMessages] = useState<Record<string, Message[]>>(
     () => {
