@@ -237,7 +237,7 @@ export function MessageComposer({
         </div>
       )}
 
-      <div className="flex items-end gap-2 rounded-lg border border-border-strong bg-bg-elevated px-2 py-2 focus-within:border-text-muted">
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <input
           ref={fileRef}
           type="file"
@@ -251,18 +251,18 @@ export function MessageComposer({
         />
         <button
           type="button"
-          title="Attach file"
+          title="Attach photo or file"
           onClick={() => fileRef.current?.click()}
-          className="rounded-md p-1.5 text-text-muted hover:bg-bg-hover hover:text-text"
+          className="rounded-md border border-border-strong bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:border-text-muted hover:text-text"
         >
-          +
+          + Photo
         </button>
         <div className="relative">
           <button
             type="button"
             title="GIF"
             onClick={() => setGifOpen((v) => !v)}
-            className="rounded-md px-1.5 py-1 text-[11px] font-semibold text-text-muted hover:bg-bg-hover hover:text-text"
+            className="rounded-md border border-border-strong bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:border-text-muted hover:text-text"
           >
             GIF
           </button>
@@ -293,7 +293,7 @@ export function MessageComposer({
             type="button"
             title="Search"
             onClick={onToggleSearch}
-            className="rounded-md px-1.5 py-1 text-[11px] text-text-muted hover:bg-bg-hover hover:text-text"
+            className="rounded-md border border-border-strong bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:border-text-muted hover:text-text"
           >
             Find
           </button>
@@ -303,11 +303,14 @@ export function MessageComposer({
             type="button"
             title="Pins"
             onClick={onTogglePins}
-            className="rounded-md px-1.5 py-1 text-[11px] text-text-muted hover:bg-bg-hover hover:text-text"
+            className="rounded-md border border-border-strong bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:border-text-muted hover:text-text"
           >
             Pins
           </button>
         )}
+      </div>
+
+      <div className="flex items-end gap-2 rounded-lg border border-border-strong bg-bg-elevated px-3 py-2 focus-within:border-text-muted">
         <textarea
           ref={textareaRef}
           value={value}
