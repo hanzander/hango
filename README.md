@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Hango
 
-## Getting Started
+Clean, minimal Discord-like chat for the web. Dark mode, Next.js-inspired UI.
 
-First, run the development server:
+## Stack
+
+- **Next.js** (App Router) + TypeScript + Tailwind CSS
+- **Supabase** — Auth, Postgres, Realtime
+- Electron desktop shell planned for a later phase
+
+## Quick start
 
 ```bash
+npm install
+cp .env.local.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Preview UI (no backend):** [/app/demo](http://localhost:3000/app/demo)
+- **Realtime chat:** configure Supabase, then sign up
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Supabase setup
 
-## Learn More
+1. Create a project at [supabase.com](https://supabase.com)
+2. Copy Project URL + anon key into `.env.local`
+3. In the SQL Editor, run in order:
+   - `supabase/migrations/001_init.sql`
+   - `supabase/migrations/002_ensure_lounge.sql` (optional legacy; app no longer auto-joins)
+   - `supabase/migrations/003_onboarding_and_invites.sql`
+   - `supabase/migrations/004_voice_channels.sql`
+4. Auth → Providers → Email: for local testing, turn **off** “Confirm email”
+5. Restart `npm run dev`, sign up → complete profile → create or join a server
 
-To learn more about Next.js, take a look at the following resources:
+Open the same channel in two browsers to verify realtime messages.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Voice & video (LiveKit)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Create a free project at [cloud.livekit.io](https://cloud.livekit.io)
+2. Copy **WebSocket URL**, **API Key**, and **API Secret** into `.env.local`
+3. Run `supabase/migrations/004_voice_channels.sql` (adds **Lounge** voice channels)
+4. Restart `npm run dev`
+5. Enter a server → open a **Voice** channel (sidebar) → auto-joins the call
+6. Use the floating bar: mute, camera, leave. **Leave server** returns to the home menu.
 
-## Deploy on Vercel
+Same voice channel = same room.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Invite flow
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Each server has an **invite code** (shown under the server name). Share it so others can **Join** from the `+` button on the server rail.
+
+## Scripts
+
+| Command       | Description        |
+|---------------|--------------------|
+| `npm run dev` | Development server |
+| `npm run build` | Production build |
+| `npm run start` | Start production   |
+
+## Routes
+
+| Path | Description |
+|------|-------------|
+| `/` | Landing |
+| `/login`, `/signup` | Auth |
+| `/app` | Redirect into first server/channel |
+| `/app/[serverId]/[channelId]` | Chat |
+| `/app/demo` | Mock UI shell (no Supabase) |
