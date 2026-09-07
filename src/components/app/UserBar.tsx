@@ -32,7 +32,7 @@ export function UserBar({
   onToggleCompact,
 }: UserBarProps) {
   return (
-    <div className="flex items-center gap-1 border-t border-border bg-bg-elevated px-2 py-2">
+    <div className="flex min-w-0 items-center gap-1 border-t border-border bg-bg-elevated px-2 py-2">
       <button
         type="button"
         onClick={onOpenSettings}

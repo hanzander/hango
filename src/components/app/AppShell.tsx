@@ -549,11 +549,11 @@ export function AppShell({
 
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex transition-transform md:static md:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex h-full w-[240px] shrink-0 transition-transform md:static md:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <div className="flex h-full flex-col">
+        <div className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-sidebar">
           <ChannelList
             server={server}
             channels={channels}
