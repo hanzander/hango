@@ -30,6 +30,7 @@ import {
   notifyDesktop,
 } from "@/lib/desktop-notify";
 import { useIdleStatus } from "@/hooks/useIdleStatus";
+import { AuthMoment } from "@/components/auth/AuthMoment";
 import {
   isNotificationLevel,
   messageMentionsMe,
@@ -108,6 +109,7 @@ export function ChatWorkspace({
   const [compact, setCompact] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [pinsOnly, setPinsOnly] = useState(false);
+  const [sayingBye, setSayingBye] = useState(false);
   const typingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeChannelIdRef = useRef<string | undefined>(undefined);
   const typingChannelRef = useRef<ReturnType<
@@ -1270,6 +1272,10 @@ export function ChatWorkspace({
     router.refresh();
   }, [configured, router]);
 
+  const requestSignOut = useCallback(() => {
+    setSayingBye(true);
+  }, []);
+
   const handleProfileSaved = useCallback((next: Profile) => {
     setProfile((prev) => (prev ? { ...prev, ...next } : next));
     setMessages((prev) =>
@@ -1448,7 +1454,9 @@ export function ChatWorkspace({
   }
 
   return (
-    <AppShell
+    <>
+      {sayingBye && <AuthMoment kind="goodbye" onDone={handleSignOut} />}
+      <AppShell
       servers={servers}
       server={activeServer}
       channels={serverChannels}
@@ -1531,8 +1539,9 @@ export function ChatWorkspace({
         setServers((serverRows as Server[]) ?? []);
         setChannels((channelRows as Channel[]) ?? []);
       }}
-      onSignOut={handleSignOut}
+      onSignOut={requestSignOut}
       onProfileSaved={handleProfileSaved}
     />
+    </>
   );
 }

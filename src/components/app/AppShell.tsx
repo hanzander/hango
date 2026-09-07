@@ -748,7 +748,7 @@ export function AppShell({
               <VoiceFrame>
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
                   <p className="text-sm text-text-secondary">
-                    Voice preview — sign in to join real calls.
+                    Voice preview — log in to join real calls.
                   </p>
                 </div>
               </VoiceFrame>

@@ -73,7 +73,7 @@ export default async function HomePage() {
           href="/login"
           className="text-sm text-text-secondary transition-colors hover:text-text"
         >
-          Sign in
+          Log in
         </Link>
       </header>
 

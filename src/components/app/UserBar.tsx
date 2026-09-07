@@ -112,7 +112,7 @@ export function UserBar({
           </IconBtn>
         )}
         {onSignOut && (
-          <IconBtn title="Sign out" onClick={onSignOut} danger>
+          <IconBtn title="Log out" onClick={onSignOut} danger>
             <LogoutIcon />
           </IconBtn>
         )}

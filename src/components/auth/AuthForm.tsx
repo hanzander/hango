@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/utils";
+import { AuthMoment, type AuthMomentKind } from "./AuthMoment";
 
 type AuthFormProps = {
   mode: "login" | "signup";
@@ -73,8 +74,17 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
+  const [moment, setMoment] = useState<AuthMomentKind | null>(null);
+  const destRef = useRef("/app");
 
   const configured = isSupabaseConfigured();
+
+  const finishMoment = useCallback(() => {
+    const dest = destRef.current;
+    setMoment(null);
+    router.push(dest);
+    router.refresh();
+  }, [router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -82,7 +92,7 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
     setInfo(null);
 
     if (!configured) {
-      setError("Sign-in isn’t available right now. Try again in a moment.");
+      setError("Log in isn’t available right now. Try again in a moment.");
       return;
     }
 
@@ -100,13 +110,12 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
         if (signUpError) throw signUpError;
 
         if (data.session) {
-          const dest = await routeAfterAuth(supabase, "/onboarding");
-          router.push(dest);
-          router.refresh();
+          destRef.current = await routeAfterAuth(supabase, "/onboarding");
+          setMoment("welcome-new");
           return;
         }
 
-        setInfo("Check your email to confirm your account, then sign in.");
+        setInfo("Check your email to confirm your account, then log in.");
         return;
       }
 
@@ -123,15 +132,14 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
         }
         if (msg.includes("email not confirmed")) {
           throw new Error(
-            "Confirm your email before signing in. Check your inbox or spam folder.",
+            "Confirm your email before logging in. Check your inbox or spam folder.",
           );
         }
         throw signInError;
       }
 
-      const dest = await routeAfterAuth(supabase, nextPath);
-      router.push(dest);
-      router.refresh();
+      destRef.current = await routeAfterAuth(supabase, nextPath);
+      setMoment("welcome");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -140,81 +148,85 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto w-full max-w-sm space-y-4">
-      <label className="block space-y-1.5">
-        <span className="text-xs text-text-secondary">Email</span>
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-border-strong bg-bg-elevated px-3 py-2.5 text-sm text-text outline-none placeholder:text-text-muted focus:border-text-muted"
-          placeholder="you@example.com"
-          autoComplete="email"
-        />
-      </label>
+    <>
+      {moment && <AuthMoment kind={moment} onDone={finishMoment} />}
 
-      <label className="block space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-text-secondary">Password</span>
-          {mode === "login" && (
-            <Link
-              href="/forgot-password"
-              className="text-[11px] text-text-muted transition-colors hover:text-text"
-            >
-              Forgot password?
-            </Link>
-          )}
-        </div>
-        <PasswordField
-          value={password}
-          onChange={setPassword}
-          autoComplete={mode === "login" ? "current-password" : "new-password"}
-        />
-      </label>
+      <form onSubmit={handleSubmit} className="mx-auto w-full max-w-sm space-y-4">
+        <label className="block space-y-1.5">
+          <span className="text-xs text-text-secondary">Email</span>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded-lg border border-border-strong bg-bg-elevated px-3 py-2.5 text-sm text-text outline-none placeholder:text-text-muted focus:border-text-muted"
+            placeholder="you@example.com"
+            autoComplete="email"
+          />
+        </label>
 
-      {error && (
-        <p className="text-sm text-danger" role="alert">
-          {error}
-        </p>
-      )}
-      {info && <p className="text-sm text-text-secondary">{info}</p>}
+        <label className="block space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-text-secondary">Password</span>
+            {mode === "login" && (
+              <Link
+                href="/forgot-password"
+                className="text-[11px] text-text-muted transition-colors hover:text-text"
+              >
+                Forgot password?
+              </Link>
+            )}
+          </div>
+          <PasswordField
+            value={password}
+            onChange={setPassword}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+          />
+        </label>
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-      >
-        {loading
-          ? "Please wait…"
-          : mode === "login"
-            ? "Sign in"
-            : "Create account"}
-      </button>
-
-      <p className="text-center text-sm text-text-secondary">
-        {mode === "login" ? (
-          <>
-            New here?{" "}
-            <Link
-              href="/signup"
-              className="text-text underline-offset-4 hover:underline"
-            >
-              Create an account
-            </Link>
-          </>
-        ) : (
-          <>
-            Already have an account?{" "}
-            <Link
-              href="/login"
-              className="text-text underline-offset-4 hover:underline"
-            >
-              Sign in
-            </Link>
-          </>
+        {error && (
+          <p className="text-sm text-danger" role="alert">
+            {error}
+          </p>
         )}
-      </p>
-    </form>
+        {info && <p className="text-sm text-text-secondary">{info}</p>}
+
+        <button
+          type="submit"
+          disabled={loading || Boolean(moment)}
+          className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {loading
+            ? "Please wait…"
+            : mode === "login"
+              ? "Log in"
+              : "Create account"}
+        </button>
+
+        <p className="text-center text-sm text-text-secondary">
+          {mode === "login" ? (
+            <>
+              New here?{" "}
+              <Link
+                href="/signup"
+                className="text-text underline-offset-4 hover:underline"
+              >
+                Create an account
+              </Link>
+            </>
+          ) : (
+            <>
+              Already have an account?{" "}
+              <Link
+                href="/login"
+                className="text-text underline-offset-4 hover:underline"
+              >
+                Log in
+              </Link>
+            </>
+          )}
+        </p>
+      </form>
+    </>
   );
 }

@@ -281,6 +281,84 @@ html[data-density="compact"] .hango-msg {
   animation: hango-landing-orb 8s ease-in-out infinite;
 }
 
+@keyframes hango-moment-orb {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translate(-50%, -52%) scale(1.06);
+  }
+}
+
+@keyframes hango-moment-copy {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hango-moment-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes hango-servers-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hango-server-card {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hango-moment-orb {
+  animation: hango-moment-orb 5.5s ease-in-out infinite;
+}
+
+.hango-moment-copy {
+  animation: hango-moment-copy 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hango-moment-dot {
+  animation: hango-moment-dot 1.2s ease-in-out infinite;
+}
+
+.hango-servers-in {
+  animation: hango-servers-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hango-server-card {
+  animation: hango-server-card 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hango-anim-fade,
   .hango-anim-pop,
@@ -301,6 +379,14 @@ html[data-density="compact"] .hango-msg {
   .hango-landing-in,
   .hango-landing-preview,
   .hango-landing-orb {
+    animation: none !important;
+  }
+
+  .hango-moment-orb,
+  .hango-moment-copy,
+  .hango-moment-dot,
+  .hango-servers-in,
+  .hango-server-card {
     animation: none !important;
   }
 }

@@ -18,18 +18,28 @@ export default async function SignupPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-bg">
-      <header className="px-6 py-6">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-bg">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 70% 45% at 50% -10%, rgba(255,196,140,0.08), transparent 55%)",
+        }}
+      />
+      <header className="relative z-10 px-6 py-6">
         <Link href="/" className="text-lg font-semibold tracking-tight text-text">
           hango
         </Link>
       </header>
-      <main className="flex flex-1 flex-col items-center justify-center px-6 pb-16">
+      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 pb-16">
         <h1 className="mb-2 text-2xl font-semibold tracking-tight text-text">
-          Create your account
+          Join hango
         </h1>
-        <p className="mb-8 text-sm text-text-secondary">
-          You’ll pick a username and photo next.
+        <p className="mb-8 max-w-sm text-center text-sm text-text-secondary">
+          Create an account to{" "}
+          <span className="text-text">hango</span>
+          <span className="text-text-secondary">ut with your people.</span>
         </p>
         <AuthForm mode="signup" />
       </main>
