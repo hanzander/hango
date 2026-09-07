@@ -15,18 +15,18 @@ import { ChannelList } from "./ChannelList";
 import { MessagePane } from "./MessagePane";
 import { MessageComposer } from "./MessageComposer";
 import { UserBar } from "./UserBar";
+import { VoiceConnectedBar } from "./VoiceConnectedBar";
 import { MembersPanel, type ServerMember } from "./MembersPanel";
 import { useServerPresence } from "@/hooks/useServerPresence";
 import { createClient } from "@/lib/supabase/client";
-import { playJoinSound, unlockAudio } from "@/lib/call-sounds";
-import { refreshMediaDevices } from "@/lib/media-devices";
+import { playJoinSound, playLeaveSound, unlockAudio } from "@/lib/call-sounds";
+import { ensureMicAccess, refreshMediaDevices } from "@/lib/media-devices";
 import { cn } from "@/lib/utils";
 
 const CallOverlay = dynamic(
   () => import("./CallOverlay").then((m) => m.CallOverlay),
   {
     ssr: false,
-    // Same chrome as the call UI — never flash a separate "Joining…" page
     loading: () => (
       <div className="relative flex min-h-0 flex-1 flex-col bg-[#050505]">
         <div
@@ -71,6 +71,11 @@ type AppShellProps = {
   onSignOut?: () => void;
 };
 
+type VoiceSession = {
+  channelId: string;
+  channelName: string;
+};
+
 class CallErrorBoundary extends Component<
   { children: ReactNode; onReset: () => void },
   { error: string | null }
@@ -106,7 +111,6 @@ class CallErrorBoundary extends Component<
   }
 }
 
-/** Shared chrome so lobby ↔ call never feels like a different page */
 function VoiceFrame({ children }: { children: ReactNode }) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-[#050505]">
@@ -137,7 +141,7 @@ export function AppShell({
   onSignOut,
 }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [inCall, setInCall] = useState(false);
+  const [voiceSession, setVoiceSession] = useState<VoiceSession | null>(null);
   const [callConnected, setCallConnected] = useState(false);
   const [callKey, setCallKey] = useState(0);
   const [serverMembers, setServerMembers] = useState<ServerMember[]>([]);
@@ -145,10 +149,12 @@ export function AppShell({
     { user_id: string; display_name: string }[]
   >([]);
 
+  const inCall = voiceSession != null;
   const isVoice = (channel.kind ?? "text") === "voice";
+  const viewingCallUi =
+    inCall && voiceSession != null && channel.id === voiceSession.channelId;
   const homeHref = demo ? "/app/demo" : "/app";
 
-  // Unlock Web Audio on first interaction so chat pings / join SFX can play
   useEffect(() => {
     const unlock = () => unlockAudio();
     window.addEventListener("pointerdown", unlock, { once: true });
@@ -167,34 +173,34 @@ export function AppShell({
 
   const closeMobile = useCallback(() => setSidebarOpen(false), []);
 
-  // Prefetch call chunk while sitting on Lounge (before Join)
   useEffect(() => {
     if (!isVoice || demo) return;
     void import("./CallOverlay");
   }, [isVoice, demo]);
 
+  // Leaving the server drops the call — switching channels does not
   useEffect(() => {
-    setInCall(false);
+    setVoiceSession(null);
     setCallConnected(false);
     setLiveRoster([]);
-  }, [channel.id]);
+  }, [server.id]);
 
   const handleCallConnected = useCallback(() => setCallConnected(true), []);
-  const handleCallDisconnected = useCallback(
-    () => setCallConnected(false),
-    [],
-  );
+  const handleCallDisconnected = useCallback(() => {
+    setCallConnected(false);
+  }, []);
+  const endVoiceSession = useCallback(() => {
+    setCallConnected(false);
+    setVoiceSession(null);
+    setLiveRoster([]);
+  }, []);
   const handleCallLeave = useCallback(() => {
-    setCallConnected(false);
-    setInCall(false);
-    setLiveRoster([]);
-  }, []);
+    endVoiceSession();
+  }, [endVoiceSession]);
   const handleCallReset = useCallback(() => {
-    setInCall(false);
-    setCallConnected(false);
-    setLiveRoster([]);
+    endVoiceSession();
     setCallKey((k) => k + 1);
-  }, []);
+  }, [endVoiceSession]);
   const handleRemoteRoster = useCallback(
     (peers: { user_id: string; display_name: string }[]) => {
       setLiveRoster(peers);
@@ -203,19 +209,24 @@ export function AppShell({
   );
 
   const joinVoice = useCallback(() => {
+    if ((channel.kind ?? "text") !== "voice") return;
     unlockAudio();
     playJoinSound();
-    // Under this click gesture: ask mic permission + cache device labels
-    // so the picker never flashes empty after join
-    void refreshMediaDevices("audioinput", { requestPermission: true }).then(
-      () => {
+    void ensureMicAccess().then((result) => {
+      if (result.ok) {
         void refreshMediaDevices("audiooutput");
         void refreshMediaDevices("videoinput");
-      },
-    );
+      }
+    });
     setCallConnected(false);
-    setInCall(true);
-  }, []);
+    setVoiceSession({ channelId: channel.id, channelName: channel.name });
+  }, [channel.id, channel.kind, channel.name]);
+
+  const disconnectVoice = useCallback(() => {
+    playLeaveSound();
+    endVoiceSession();
+    setCallKey((k) => k + 1);
+  }, [endVoiceSession]);
 
   useEffect(() => {
     if (demo || !server.id) return;
@@ -257,8 +268,8 @@ export function AppShell({
     };
   }, [demo, server.id]);
 
-  // Mark in-voice as soon as Join is clicked (don't wait for LiveKit connect)
-  const voiceChannelId = isVoice && inCall ? channel.id : null;
+  const voiceChannelId =
+    inCall && voiceSession ? voiceSession.channelId : null;
 
   const { online, inVoiceByChannel } = useServerPresence({
     serverId: server.id,
@@ -269,18 +280,18 @@ export function AppShell({
     enabled: !demo && Boolean(userId),
   });
 
-  // Merge LiveKit peers + always show yourself under Lounge the instant you Join
   const voiceOccupants = (() => {
     const map: typeof inVoiceByChannel = { ...inVoiceByChannel };
-    if (inCall && userId) {
-      const existing = map[channel.id] ?? [];
+    if (inCall && voiceSession && userId) {
+      const vid = voiceSession.channelId;
+      const existing = map[vid] ?? [];
       const byId = new Map(existing.map((u) => [u.user_id, u]));
 
       byId.set(userId, {
         user_id: userId,
         display_name: displayName,
         avatar_url: avatarUrl ?? byId.get(userId)?.avatar_url ?? null,
-        voice_channel_id: channel.id,
+        voice_channel_id: vid,
         online_at: byId.get(userId)?.online_at ?? new Date().toISOString(),
       });
 
@@ -291,17 +302,19 @@ export function AppShell({
           user_id: p.user_id,
           display_name: p.display_name || prev?.display_name || "User",
           avatar_url: prev?.avatar_url ?? null,
-          voice_channel_id: channel.id,
+          voice_channel_id: vid,
           online_at: prev?.online_at ?? new Date().toISOString(),
         });
       }
 
-      map[channel.id] = Array.from(byId.values());
+      map[vid] = Array.from(byId.values());
     }
     return map;
   })();
 
-  const occupants = voiceOccupants[channel.id]?.length ?? 0;
+  const occupants = isVoice
+    ? (voiceOccupants[channel.id]?.length ?? 0)
+    : 0;
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-bg text-text">
@@ -330,6 +343,18 @@ export function AppShell({
             homeHref={homeHref}
             voiceOccupants={voiceOccupants}
           />
+          {inCall && voiceSession && !demo && (
+            <VoiceConnectedBar
+              channelName={voiceSession.channelName}
+              channelHref={
+                demo
+                  ? `/app/demo?c=${voiceSession.channelId}`
+                  : `/app/${server.id}/${voiceSession.channelId}`
+              }
+              connected={callConnected}
+              onDisconnect={disconnectVoice}
+            />
+          )}
           <UserBar
             displayName={displayName}
             avatarUrl={avatarUrl}
@@ -359,21 +384,21 @@ export function AppShell({
           </Link>
         </div>
 
-        {isVoice ? (
-          demo ? (
-            <VoiceFrame>
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-                <p className="text-sm text-text-secondary">
-                  Voice preview — sign in to join real calls.
-                </p>
-              </div>
-            </VoiceFrame>
-          ) : inCall ? (
+        {/* Keep LiveKit mounted while browsing other channels */}
+        {inCall && voiceSession && !demo && (
+          <div
+            className={cn(
+              viewingCallUi
+                ? "flex min-h-0 flex-1 flex-col"
+                : "pointer-events-none fixed left-0 top-0 z-[-1] h-px w-px overflow-hidden opacity-0",
+            )}
+            aria-hidden={!viewingCallUi}
+          >
             <CallErrorBoundary onReset={handleCallReset}>
               <MemoCallSlot
-                channelId={channel.id}
+                channelId={voiceSession.channelId}
                 callKey={callKey}
-                channelName={channel.name}
+                channelName={voiceSession.channelName}
                 displayName={displayName}
                 onConnected={handleCallConnected}
                 onDisconnected={handleCallDisconnected}
@@ -381,54 +406,92 @@ export function AppShell({
                 onRemoteRoster={handleRemoteRoster}
               />
             </CallErrorBoundary>
-          ) : (
-            <VoiceFrame>
-              <header className="flex items-center justify-between px-5 py-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400/50" />
-                    <h1 className="text-sm font-semibold tracking-tight text-text">
-                      {channel.name}
-                    </h1>
-                  </div>
-                  <p className="mt-0.5 text-xs text-text-muted">
-                    {occupants > 0
-                      ? `${occupants} in call`
-                      : "No one here yet"}
-                  </p>
-                </div>
-              </header>
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 pb-24">
-                <div className="text-center">
-                  <h2 className="text-lg font-semibold text-text">
-                    {channel.name}
-                  </h2>
-                  <p className="mt-1 text-sm text-text-muted">
-                    {occupants > 0
-                      ? `${occupants} already here`
-                      : "Ready when you are"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={joinVoice}
-                  className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-medium text-black transition-colors hover:bg-emerald-400"
-                >
-                  Join voice
-                </button>
-              </div>
-            </VoiceFrame>
-          )
-        ) : (
-          <>
-            <MessagePane
-              channelName={channel.name}
-              messages={messages}
-              loading={loadingMessages}
-            />
-            <MessageComposer channelName={channel.name} onSend={onSend} />
-          </>
+          </div>
         )}
+
+        {!viewingCallUi &&
+          (isVoice ? (
+            demo ? (
+              <VoiceFrame>
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+                  <p className="text-sm text-text-secondary">
+                    Voice preview — sign in to join real calls.
+                  </p>
+                </div>
+              </VoiceFrame>
+            ) : inCall &&
+              voiceSession &&
+              channel.id !== voiceSession.channelId ? (
+              <VoiceFrame>
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+                  <p className="text-sm text-text-secondary">
+                    You’re connected to{" "}
+                    <span className="font-medium text-text">
+                      {voiceSession.channelName}
+                    </span>
+                    .
+                  </p>
+                  <Link
+                    href={hrefForChannel({
+                      ...channel,
+                      id: voiceSession.channelId,
+                      name: voiceSession.channelName,
+                      kind: "voice",
+                    } as Channel)}
+                    className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-medium text-black hover:bg-emerald-400"
+                  >
+                    Return to {voiceSession.channelName}
+                  </Link>
+                </div>
+              </VoiceFrame>
+            ) : (
+              <VoiceFrame>
+                <header className="flex items-center justify-between px-5 py-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400/50" />
+                      <h1 className="text-sm font-semibold tracking-tight text-text">
+                        {channel.name}
+                      </h1>
+                    </div>
+                    <p className="mt-0.5 text-xs text-text-muted">
+                      {occupants > 0
+                        ? `${occupants} in call`
+                        : "No one here yet"}
+                    </p>
+                  </div>
+                </header>
+                <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 pb-24">
+                  <div className="text-center">
+                    <h2 className="text-lg font-semibold text-text">
+                      {channel.name}
+                    </h2>
+                    <p className="mt-1 text-sm text-text-muted">
+                      {occupants > 0
+                        ? `${occupants} already here`
+                        : "Ready when you are"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={joinVoice}
+                    className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-medium text-black transition-colors hover:bg-emerald-400"
+                  >
+                    Join voice
+                  </button>
+                </div>
+              </VoiceFrame>
+            )
+          ) : (
+            <>
+              <MessagePane
+                channelName={channel.name}
+                messages={messages}
+                loading={loadingMessages}
+              />
+              <MessageComposer channelName={channel.name} onSend={onSend} />
+            </>
+          ))}
       </div>
 
       {!demo && (
@@ -436,13 +499,13 @@ export function AppShell({
           serverMembers={serverMembers}
           online={(() => {
             const byId = new Map(online.map((u) => [u.user_id, u]));
-            if (inCall && userId) {
+            if (inCall && voiceSession && userId) {
               const self = byId.get(userId);
               byId.set(userId, {
                 user_id: userId,
                 display_name: self?.display_name || displayName,
                 avatar_url: self?.avatar_url ?? avatarUrl ?? null,
-                voice_channel_id: channel.id,
+                voice_channel_id: voiceSession.channelId,
                 online_at: self?.online_at ?? new Date().toISOString(),
               });
               for (const p of liveRoster) {
@@ -451,7 +514,7 @@ export function AppShell({
                   user_id: p.user_id,
                   display_name: p.display_name || prev?.display_name || "User",
                   avatar_url: prev?.avatar_url ?? null,
-                  voice_channel_id: channel.id,
+                  voice_channel_id: voiceSession.channelId,
                   online_at: prev?.online_at ?? new Date().toISOString(),
                 });
               }
@@ -464,7 +527,6 @@ export function AppShell({
   );
 }
 
-/** Keeps the LiveKit tree from re-rendering on every presence tick */
 const MemoCallSlot = memo(function MemoCallSlot({
   channelId,
   callKey,

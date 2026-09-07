@@ -31,6 +31,7 @@ import {
   getCachedDevices,
   refreshMediaDevices,
   warmDeviceCache,
+  ensureMicAccess,
 } from "@/lib/media-devices";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +66,29 @@ const MIC_OPTS = {
 const CAM_OPTS = {
   resolution: VideoPresets.h360.resolution,
 } as const;
+
+/** Try LiveKit mic with constraints, then bare enable (friends hit NotFound on strict opts). */
+async function enableMicrophone(room: Room, deviceId?: string) {
+  const attempts: (MediaTrackConstraints | undefined)[] = [
+    deviceId ? { ...MIC_OPTS, deviceId } : { ...MIC_OPTS },
+    deviceId ? { deviceId } : undefined,
+    {},
+  ];
+  let lastErr: unknown;
+  for (const opts of attempts) {
+    try {
+      if (opts === undefined) {
+        await room.localParticipant.setMicrophoneEnabled(true);
+      } else {
+        await room.localParticipant.setMicrophoneEnabled(true, opts);
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
 
 function localPlaceholder(displayName: string): PeerSnapshot {
   return {
@@ -130,6 +154,8 @@ export function CallOverlay({
   const [camOn, setCamOn] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
   const [deviceHint, setDeviceHint] = useState<string | null>(null);
+  const [needsMicAllow, setNeedsMicAllow] = useState(false);
+  const [micAllowBusy, setMicAllowBusy] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [room, setRoom] = useState<Room | null>(null);
 
@@ -301,14 +327,13 @@ export function CallOverlay({
         if (cancelled) return;
 
         try {
-          await room.localParticipant.setMicrophoneEnabled(true, MIC_OPTS);
+          await enableMicrophone(room);
           setMicOn(true);
-          // Labels are available after mic permission — cache once, never wipe later
           void warmDeviceCache();
         } catch (micErr) {
           setDeviceHint(friendlyDeviceError(micErr, "microphone"));
           setMicOn(false);
-          // Still try to list devices (may prompt)
+          setNeedsMicAllow(true);
           void warmDeviceCache();
         }
         schedulePeers();
@@ -371,25 +396,48 @@ export function CallOverlay({
       setDeviceHint(null);
       setMicOn(next);
       try {
-        const preferred = r.getActiveDevice("audioinput");
-        await r.localParticipant.setMicrophoneEnabled(next, {
-          ...MIC_OPTS,
-          ...(preferred ? { deviceId: preferred } : {}),
-        });
-        if (next) playUnmuteSound();
-        else playMuteSound();
-      } catch (err) {
-        // Retry once without deviceId (preferred device may be stale)
-        try {
-          await r.localParticipant.setMicrophoneEnabled(next, MIC_OPTS);
-          if (next) playUnmuteSound();
-          else playMuteSound();
-        } catch (err2) {
-          setMicOn(!next);
-          setDeviceHint(friendlyDeviceError(err2, "microphone"));
+        if (next) {
+          const preferred = r.getActiveDevice("audioinput") || undefined;
+          await enableMicrophone(r, preferred);
+          setNeedsMicAllow(false);
+          playUnmuteSound();
+          void warmDeviceCache();
+        } else {
+          await r.localParticipant.setMicrophoneEnabled(false);
+          playMuteSound();
         }
+      } catch (err) {
+        setMicOn(false);
+        setNeedsMicAllow(true);
+        setDeviceHint(friendlyDeviceError(err, "microphone"));
       }
     });
+  }
+
+  async function allowMicrophone() {
+    setMicAllowBusy(true);
+    setDeviceHint(null);
+    try {
+      const access = await ensureMicAccess();
+      if (!access.ok) {
+        setNeedsMicAllow(true);
+        setDeviceHint(access.message);
+        return;
+      }
+      const r = roomRef.current;
+      if (r && r.state === ConnectionState.Connected) {
+        await enableMicrophone(r, access.devices[0]?.deviceId);
+        setMicOn(true);
+        setNeedsMicAllow(false);
+        playUnmuteSound();
+        schedulePeers();
+      }
+    } catch (err) {
+      setNeedsMicAllow(true);
+      setDeviceHint(friendlyDeviceError(err, "microphone"));
+    } finally {
+      setMicAllowBusy(false);
+    }
   }
 
   async function toggleCam() {
@@ -512,16 +560,33 @@ export function CallOverlay({
         </div>
       )}
 
-      {deviceHint && (
-        <div className="relative z-10 mx-5 mb-2 flex items-start justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-          <p>{deviceHint}</p>
-          <button
-            type="button"
-            className="shrink-0 text-amber-200/80 hover:text-white"
-            onClick={() => setDeviceHint(null)}
-          >
-            Dismiss
-          </button>
+      {(needsMicAllow || deviceHint) && (
+        <div className="relative z-10 mx-5 mb-2 flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+          <p className="min-w-0 flex-1">
+            {deviceHint ||
+              "Microphone needs permission. Click Allow microphone — if nothing pops up, use the lock icon in the address bar → Microphone → Allow."}
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            {(needsMicAllow || !micOn) && (
+              <button
+                type="button"
+                disabled={micAllowBusy}
+                className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-medium text-black hover:bg-emerald-400 disabled:opacity-50"
+                onClick={() => void allowMicrophone()}
+              >
+                {micAllowBusy ? "Requesting…" : "Allow microphone"}
+              </button>
+            )}
+            {deviceHint && (
+              <button
+                type="button"
+                className="text-amber-200/80 hover:text-white"
+                onClick={() => setDeviceHint(null)}
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -549,6 +614,12 @@ export function CallOverlay({
             dangerWhenOff
             onToggle={toggleMic}
             onDeviceError={setDeviceHint}
+            onMicRecovered={() => {
+              setMicOn(true);
+              setNeedsMicAllow(false);
+              setDeviceHint(null);
+              schedulePeers();
+            }}
             iconOn={<IconMic />}
             iconOff={<IconMicOff />}
           />
@@ -664,13 +735,13 @@ function friendlyDeviceError(err: unknown, kind: string) {
     name === "NotReadableError" ||
     /Could not start video source/i.test(message)
   ) {
-    return `Couldn’t start your ${kind}. Close other apps using it (Zoom, Teams, browser tabs), then try again.`;
+    return `Couldn’t start your ${kind}. Close Zoom, Teams, Discord, or other tabs using it, then click Allow microphone.`;
   }
-  if (name === "NotAllowedError" || /Permission/i.test(message)) {
-    return `Permission denied for ${kind}. Allow access in your browser settings, then rejoin.`;
+  if (name === "NotAllowedError" || /Permission|dismissed/i.test(message)) {
+    return `Microphone is blocked for this site. Click the lock icon in the address bar → Site settings → Microphone → Allow, then click Allow microphone here.`;
   }
-  if (name === "NotFoundError") {
-    return `No ${kind} found. Plug one in or pick another device.`;
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return `No ${kind} detected (or Windows privacy is blocking it). Check Settings → Privacy → Microphone is on for your browser, then click Allow microphone.`;
   }
   if (/setSinkId|audio output/i.test(message)) {
     return "This browser can’t switch speakers. Try Chrome/Edge, or change output in OS settings.";
@@ -686,6 +757,7 @@ function DeviceControl({
   disabled,
   onToggle,
   onDeviceError,
+  onMicRecovered,
   iconOn,
   iconOff,
   dangerWhenOff,
@@ -698,6 +770,7 @@ function DeviceControl({
   disabled?: boolean;
   onToggle?: () => void | Promise<void>;
   onDeviceError?: (message: string) => void;
+  onMicRecovered?: () => void;
   iconOn: ReactNode;
   iconOff: ReactNode;
   dangerWhenOff?: boolean;
@@ -776,6 +849,7 @@ function DeviceControl({
           label={label}
           onClose={() => setOpen(false)}
           onDeviceError={onDeviceError}
+          onMicRecovered={onMicRecovered}
         />
       )}
     </div>
@@ -788,12 +862,14 @@ function DeviceMenu({
   label,
   onClose,
   onDeviceError,
+  onMicRecovered,
 }: {
   room: Room;
   kind: MediaDeviceKind;
   label: string;
   onClose: () => void;
   onDeviceError?: (message: string) => void;
+  onMicRecovered?: () => void;
 }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>(() =>
     getCachedDevices(kind),
@@ -806,6 +882,8 @@ function DeviceMenu({
   });
   const [loading, setLoading] = useState(() => getCachedDevices(kind).length === 0);
   const [switching, setSwitching] = useState(false);
+  const [allowBusy, setAllowBusy] = useState(false);
+  const [localHint, setLocalHint] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -863,11 +941,9 @@ function DeviceMenu({
       await room.switchActiveDevice(kind, deviceId, true);
       setActiveId(deviceId);
 
-      if (kind === "audioinput" && room.localParticipant.isMicrophoneEnabled) {
-        await room.localParticipant.setMicrophoneEnabled(true, {
-          ...MIC_OPTS,
-          deviceId,
-        });
+      if (kind === "audioinput") {
+        await enableMicrophone(room, deviceId);
+        onMicRecovered?.();
       }
       if (kind === "videoinput" && room.localParticipant.isCameraEnabled) {
         await room.localParticipant.setCameraEnabled(true, {
@@ -884,16 +960,57 @@ function DeviceMenu({
     }
   }
 
+  async function allowAndList() {
+    setAllowBusy(true);
+    setLocalHint(null);
+    try {
+      if (kind === "audioinput" || kind === "audiooutput") {
+        const access = await ensureMicAccess();
+        if (!access.ok) {
+          setLocalHint(access.message);
+          onDeviceError?.(access.message);
+          return;
+        }
+        setDevices(access.devices);
+        if (access.devices[0]) setActiveId(access.devices[0].deviceId);
+        if (kind === "audioinput") {
+          await enableMicrophone(room, access.devices[0]?.deviceId);
+          onMicRecovered?.();
+        }
+        const outs = await refreshMediaDevices("audiooutput");
+        if (kind === "audiooutput" && outs.length > 0) {
+          setDevices(outs);
+          setActiveId(outs[0].deviceId);
+        }
+      } else {
+        const list = await refreshMediaDevices(kind, { requestPermission: true });
+        if (list.length > 0) {
+          setDevices(list);
+          setActiveId(list[0].deviceId);
+        } else {
+          setLocalHint("No camera found. Check browser permissions.");
+        }
+      }
+    } catch (err) {
+      const msg = friendlyDeviceError(err, label.toLowerCase());
+      setLocalHint(msg);
+      onDeviceError?.(msg);
+    } finally {
+      setAllowBusy(false);
+      setLoading(false);
+    }
+  }
+
   async function refresh() {
+    if (devices.length === 0 && (kind === "audioinput" || kind === "audiooutput")) {
+      await allowAndList();
+      return;
+    }
     setLoading(devices.length === 0);
     try {
-      const micLive = room.localParticipant.isMicrophoneEnabled;
-      const camLive = room.localParticipant.isCameraEnabled;
-      const requestPermission =
-        (kind === "audioinput" && !micLive) ||
-        (kind === "videoinput" && !camLive) ||
-        (kind === "audiooutput" && !micLive);
-      const list = await refreshMediaDevices(kind, { requestPermission });
+      const list = await refreshMediaDevices(kind, {
+        requestPermission: devices.length === 0,
+      });
       if (list.length > 0) {
         setDevices(list);
         setActiveId(room.getActiveDevice(kind) ?? list[0].deviceId);
@@ -927,19 +1044,29 @@ function DeviceMenu({
         ) : showEmpty ? (
           <li className="space-y-2 px-3 py-2 text-xs text-white/50">
             <p>
-              {kind === "videoinput"
-                ? "No camera found. Allow camera access, then Try again."
-                : kind === "audiooutput"
-                  ? "No speakers listed. System default will be used."
-                  : "No mic found. Allow microphone access, then Try again."}
+              {localHint ||
+                (kind === "videoinput"
+                  ? "Camera blocked or missing."
+                  : kind === "audiooutput"
+                    ? "Allow mic once so the browser can list speakers."
+                    : "Browser hasn't allowed the microphone yet (common on a friend's PC).")}
             </p>
             <button
               type="button"
-              className="text-emerald-400 hover:underline"
-              onClick={() => void refresh()}
+              disabled={allowBusy}
+              className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-medium text-black hover:bg-emerald-400 disabled:opacity-50"
+              onClick={() => void allowAndList()}
             >
-              Try again
+              {allowBusy
+                ? "Requesting…"
+                : kind === "videoinput"
+                  ? "Allow camera"
+                  : "Allow microphone"}
             </button>
+            <p className="text-[10px] leading-relaxed text-white/35">
+              If no popup appears: address bar lock icon → Microphone → Allow.
+              On Windows also check Settings → Privacy → Microphone.
+            </p>
           </li>
         ) : (
           devices.map((device, i) => {
