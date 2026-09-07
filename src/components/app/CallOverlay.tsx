@@ -114,10 +114,13 @@ export function CallOverlay({
       serverUrl={serverUrl}
       connect
       audio
-      video={preferVideo}
+      video={false}
+      options={{
+        adaptiveStream: true,
+        dynacast: true,
+      }}
       onDisconnected={onLeave}
       onError={(err) => {
-        // Don't tear down the room for device failures — CallStage shows a banner.
         console.warn("[hango call]", err);
       }}
       onMediaDeviceFailure={(failure, kind) => {
@@ -142,9 +145,21 @@ function CallStage({
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
   const cameraTracks = useTracks(
-    [{ source: Track.Source.Camera, withPlaceholder: true }],
+    [Track.Source.Camera],
     { onlySubscribed: false },
   );
+
+  // Prefer one tile per participant (camera if present, else avatar placeholder via participants)
+  const tiles = useMemo(() => {
+    const byId = new Map<string, (typeof cameraTracks)[number]>();
+    for (const t of cameraTracks) {
+      byId.set(t.participant.identity, t);
+    }
+    return participants.map((p) => ({
+      participant: p,
+      trackRef: byId.get(p.identity) ?? null,
+    }));
+  }, [participants, cameraTracks]);
 
   const micOn = localParticipant.isMicrophoneEnabled;
   const camOn = localParticipant.isCameraEnabled;
@@ -214,12 +229,12 @@ function CallStage({
   }
 
   const gridClass = useMemo(() => {
-    const n = Math.max(participants.length, 1);
+    const n = Math.max(tiles.length, 1);
     if (n === 1) return "grid-cols-1 max-w-3xl mx-auto";
     if (n === 2) return "grid-cols-1 sm:grid-cols-2 max-w-5xl mx-auto";
     if (n <= 4) return "grid-cols-2 max-w-5xl mx-auto";
     return "grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto";
-  }, [participants.length]);
+  }, [tiles.length]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -270,16 +285,11 @@ function CallStage({
 
       <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4 pb-32">
         <div className={cn("grid w-full gap-3", gridClass)}>
-          {cameraTracks.map((trackRef) => (
+          {tiles.map(({ participant, trackRef }) => (
             <ParticipantTile
-              key={`${trackRef.participant.identity}-${trackRef.source}`}
-              participant={trackRef.participant}
+              key={participant.identity}
+              participant={participant}
               trackRef={trackRef}
-              showVideo={Boolean(
-                trackRef.publication?.track &&
-                  !trackRef.publication.isMuted &&
-                  trackRef.participant.isCameraEnabled,
-              )}
             />
           ))}
         </div>
@@ -373,18 +383,6 @@ function DeviceControl({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Only request getUserMedia after the track is already live (or for audio menus).
-  // requestPermissions:true on videoinput at join causes NotReadableError overlays.
-  const shouldRequestPermissions =
-    open && (kind !== "videoinput" || enabled);
-
-  const { devices, activeDeviceId, setActiveMediaDevice } =
-    useMediaDeviceSelect({
-      kind,
-      requestPermissions: shouldRequestPermissions,
-      onError: (e) => onDeviceError?.(friendlyDeviceError(e, label.toLowerCase())),
-    });
-
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
@@ -441,56 +439,89 @@ function DeviceControl({
       </div>
 
       {open && (
-        <div className="absolute bottom-[calc(100%+10px)] left-1/2 z-30 w-64 -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-[#111] shadow-2xl">
-          <div className="border-b border-white/10 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-white/45">
-            {label}
-          </div>
-          <ul className="max-h-56 overflow-y-auto py-1">
-            {devices.length === 0 ? (
-              <li className="px-3 py-2 text-xs text-white/40">
-                {kind === "videoinput" && !enabled
-                  ? "Turn camera on to list devices"
-                  : "No devices found"}
-              </li>
-            ) : (
-              devices.map((device) => {
-                const active = device.deviceId === activeDeviceId;
-                return (
-                  <li key={device.deviceId || device.label}>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await setActiveMediaDevice(device.deviceId);
-                          setOpen(false);
-                        } catch (err) {
-                          onDeviceError?.(
-                            friendlyDeviceError(err, label.toLowerCase()),
-                          );
-                        }
-                      }}
-                      className={cn(
-                        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-white/80 transition-colors hover:bg-white/5",
-                        active && "bg-white/10 text-white",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 shrink-0 rounded-full",
-                          active ? "bg-emerald-400" : "bg-transparent",
-                        )}
-                      />
-                      <span className="truncate">
-                        {device.label || "Default device"}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-        </div>
+        <DeviceMenu
+          kind={kind}
+          label={label}
+          enabled={enabled}
+          onClose={() => setOpen(false)}
+          onDeviceError={onDeviceError}
+        />
       )}
+    </div>
+  );
+}
+
+/** Mounted only while the menu is open — avoids LiveKit device polling on join. */
+function DeviceMenu({
+  kind,
+  label,
+  enabled,
+  onClose,
+  onDeviceError,
+}: {
+  kind: MediaDeviceKind;
+  label: string;
+  enabled: boolean;
+  onClose: () => void;
+  onDeviceError?: (message: string) => void;
+}) {
+  const shouldRequestPermissions = kind !== "videoinput" || enabled;
+  const { devices, activeDeviceId, setActiveMediaDevice } =
+    useMediaDeviceSelect({
+      kind,
+      requestPermissions: shouldRequestPermissions,
+      onError: (e) => onDeviceError?.(friendlyDeviceError(e, label.toLowerCase())),
+    });
+
+  return (
+    <div className="absolute bottom-[calc(100%+10px)] left-1/2 z-30 w-64 -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-[#111] shadow-2xl">
+      <div className="border-b border-white/10 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-white/45">
+        {label}
+      </div>
+      <ul className="max-h-56 overflow-y-auto py-1">
+        {devices.length === 0 ? (
+          <li className="px-3 py-2 text-xs text-white/40">
+            {kind === "videoinput" && !enabled
+              ? "Turn camera on to list devices"
+              : "No devices found"}
+          </li>
+        ) : (
+          devices.map((device) => {
+            const active = device.deviceId === activeDeviceId;
+            return (
+              <li key={device.deviceId || device.label}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await setActiveMediaDevice(device.deviceId);
+                      onClose();
+                    } catch (err) {
+                      onDeviceError?.(
+                        friendlyDeviceError(err, label.toLowerCase()),
+                      );
+                    }
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-white/80 transition-colors hover:bg-white/5",
+                    active && "bg-white/10 text-white",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 shrink-0 rounded-full",
+                      active ? "bg-emerald-400" : "bg-transparent",
+                    )}
+                  />
+                  <span className="truncate">
+                    {device.label || "Default device"}
+                  </span>
+                </button>
+              </li>
+            );
+          })
+        )}
+      </ul>
     </div>
   );
 }
@@ -498,14 +529,17 @@ function DeviceControl({
 function ParticipantTile({
   participant,
   trackRef,
-  showVideo,
 }: {
   participant: Participant;
-  trackRef: TrackReferenceOrPlaceholder;
-  showVideo: boolean;
+  trackRef: TrackReferenceOrPlaceholder | null;
 }) {
   const speaking = useIsSpeaking(participant);
   const name = participant.name || participant.identity.slice(0, 8);
+  const showVideo = Boolean(
+    trackRef?.publication?.track &&
+      !trackRef.publication.isMuted &&
+      participant.isCameraEnabled,
+  );
 
   return (
     <div
@@ -515,9 +549,9 @@ function ParticipantTile({
           "ring-2 ring-emerald-400/80 shadow-[0_0_0_4px_rgba(52,211,153,0.12)]",
       )}
     >
-      {showVideo && trackRef.publication?.track ? (
+      {showVideo && trackRef && trackRef.publication ? (
         <VideoTrack
-          trackRef={trackRef}
+          trackRef={trackRef as Parameters<typeof VideoTrack>[0]["trackRef"]}
           className="h-full w-full object-cover"
         />
       ) : (

@@ -310,6 +310,7 @@ export function ChatWorkspace({
       channels={serverChannels}
       channel={activeChannel}
       messages={messages}
+      userId={profile?.id ?? ""}
       displayName={profile?.display_name ?? "User"}
       avatarUrl={profile?.avatar_url}
       loadingMessages={loadingMessages}

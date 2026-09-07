@@ -1,20 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import type { Channel, Message, Server } from "@/lib/types";
 import { ChannelList } from "./ChannelList";
 import { MessagePane } from "./MessagePane";
 import { MessageComposer } from "./MessageComposer";
 import { UserBar } from "./UserBar";
-import { CallOverlay } from "./CallOverlay";
+import { MembersPanel } from "./MembersPanel";
+import { useServerPresence } from "@/hooks/useServerPresence";
 import { cn } from "@/lib/utils";
+
+const CallOverlay = dynamic(
+  () =>
+    import("./CallOverlay").then((m) => m.CallOverlay),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-1 items-center justify-center bg-[#050505] text-sm text-text-muted">
+        Preparing call…
+      </div>
+    ),
+  },
+);
 
 type AppShellProps = {
   server: Server;
   channels: Channel[];
   channel: Channel;
   messages: Message[];
+  userId: string;
   displayName: string;
   avatarUrl?: string | null;
   loadingMessages?: boolean;
@@ -23,11 +39,45 @@ type AppShellProps = {
   onSignOut?: () => void;
 };
 
+class CallErrorBoundary extends Component<
+  { children: ReactNode; onReset: () => void },
+  { error: string | null }
+> {
+  state = { error: null as string | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error: error.message || "Call crashed" };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[#050505] px-6 text-center">
+          <p className="text-sm text-danger">Call hit a snag.</p>
+          <p className="max-w-sm text-xs text-text-muted">{this.state.error}</p>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ error: null });
+              this.props.onReset();
+            }}
+            className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-fg"
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function AppShell({
   server,
   channels,
   channel,
   messages,
+  userId,
   displayName,
   avatarUrl,
   loadingMessages,
@@ -36,7 +86,8 @@ export function AppShell({
   onSignOut,
 }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [inCall, setInCall] = useState(true);
+  const [inCall, setInCall] = useState(false);
+  const [callKey, setCallKey] = useState(0);
 
   const isVoice = (channel.kind ?? "text") === "voice";
   const homeHref = demo ? "/app/demo" : "/app";
@@ -45,9 +96,26 @@ export function AppShell({
     ? (c: Channel) => `/app/demo?c=${c.id}`
     : (c: Channel) => `/app/${server.id}/${c.id}`;
 
+  // Auto-join when entering a voice channel (after a tick so UI can paint first)
   useEffect(() => {
-    if (isVoice) setInCall(true);
-  }, [channel.id, isVoice]);
+    if (!isVoice || demo) {
+      setInCall(false);
+      return;
+    }
+    const t = window.setTimeout(() => setInCall(true), 50);
+    return () => window.clearTimeout(t);
+  }, [channel.id, isVoice, demo]);
+
+  const voiceChannelId = isVoice && inCall ? channel.id : null;
+
+  const { online, inVoiceByChannel } = useServerPresence({
+    serverId: server.id,
+    userId: userId || "anon",
+    displayName,
+    avatarUrl,
+    voiceChannelId,
+    enabled: !demo && Boolean(userId),
+  });
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-bg text-text">
@@ -74,6 +142,7 @@ export function AppShell({
             onCloseMobile={() => setSidebarOpen(false)}
             hrefForChannel={hrefForChannel}
             homeHref={homeHref}
+            voiceOccupants={inVoiceByChannel}
           />
           <UserBar
             displayName={displayName}
@@ -108,51 +177,45 @@ export function AppShell({
           demo ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[#050505] px-6 text-center">
               <p className="text-sm text-text-secondary">
-                Voice preview — sign in with LiveKit configured to join real
-                calls.
+                Voice preview — sign in to join real calls.
               </p>
-              <Link
-                href={homeHref}
-                className="text-xs text-text-muted hover:text-text"
-              >
-                Back to home
-              </Link>
             </div>
           ) : inCall ? (
-            <CallOverlay
-              key={channel.id}
-              channelId={channel.id}
-              channelName={channel.name}
-              displayName={displayName}
-              preferVideo={false}
-              fullStage
-              onLeave={() => setInCall(false)}
-            />
+            <CallErrorBoundary
+              onReset={() => {
+                setInCall(false);
+                setCallKey((k) => k + 1);
+                window.setTimeout(() => setInCall(true), 100);
+              }}
+            >
+              <CallOverlay
+                key={`${channel.id}-${callKey}`}
+                channelId={channel.id}
+                channelName={channel.name}
+                displayName={displayName}
+                preferVideo={false}
+                fullStage
+                onLeave={() => setInCall(false)}
+              />
+            </CallErrorBoundary>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[#050505]">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/5 text-text-muted ring-1 ring-white/10">
-                <svg
-                  width="28"
-                  height="28"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden
-                >
-                  <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z" />
-                </svg>
-              </div>
               <div className="text-center">
                 <h2 className="text-lg font-semibold text-text">
                   {channel.name}
                 </h2>
-                <p className="mt-1 text-sm text-text-muted">You left the call</p>
+                <p className="mt-1 text-sm text-text-muted">
+                  {(inVoiceByChannel[channel.id]?.length ?? 0) > 0
+                    ? `${inVoiceByChannel[channel.id].length} in call`
+                    : "No one here yet"}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => setInCall(true)}
                 className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-medium text-black hover:bg-emerald-400"
               >
-                Rejoin voice
+                Join voice
               </button>
             </div>
           )
@@ -167,6 +230,8 @@ export function AppShell({
           </>
         )}
       </div>
+
+      {!demo && <MembersPanel members={online} />}
     </div>
   );
 }

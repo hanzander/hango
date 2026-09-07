@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Channel, Server } from "@/lib/types";
+import type { PresenceUser } from "@/hooks/useServerPresence";
+import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
 
 type ChannelListProps = {
@@ -12,6 +14,7 @@ type ChannelListProps = {
   onCloseMobile?: () => void;
   hrefForChannel?: (channel: Channel) => string;
   homeHref?: string;
+  voiceOccupants?: Record<string, PresenceUser[]>;
 };
 
 export function ChannelList({
@@ -21,6 +24,7 @@ export function ChannelList({
   onCloseMobile,
   hrefForChannel = (channel) => `/app/${server.id}/${channel.id}`,
   homeHref = "/app",
+  voiceOccupants = {},
 }: ChannelListProps) {
   const [copied, setCopied] = useState(false);
 
@@ -93,9 +97,10 @@ export function ChannelList({
         <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
           Voice
         </p>
-        <ul className="space-y-0.5">
+        <ul className="space-y-1">
           {voiceChannels.map((channel) => {
             const active = channel.id === activeChannelId;
+            const occupants = voiceOccupants[channel.id] ?? [];
             return (
               <li key={channel.id}>
                 <Link
@@ -108,10 +113,32 @@ export function ChannelList({
                 >
                   <VoiceIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
                   <span className="truncate">{channel.name}</span>
-                  {active && (
-                    <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  {occupants.length > 0 && (
+                    <span className="ml-auto text-[10px] text-emerald-400/80">
+                      {occupants.length}
+                    </span>
                   )}
                 </Link>
+                {occupants.length > 0 && (
+                  <ul className="mt-0.5 space-y-0.5 border-l border-border py-0.5 pl-3 ml-3">
+                    {occupants.map((user) => (
+                      <li
+                        key={user.user_id}
+                        className="flex items-center gap-1.5 py-0.5"
+                      >
+                        <Avatar
+                          name={user.display_name}
+                          src={user.avatar_url}
+                          size="sm"
+                          className="!h-5 !w-5 !text-[8px]"
+                        />
+                        <span className="truncate text-[11px] text-text-secondary">
+                          {user.display_name}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             );
           })}
