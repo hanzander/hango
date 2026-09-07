@@ -687,6 +687,7 @@ export function ChatWorkspace({
         toast("Message send failed", "danger");
         throw new Error("empty");
       }
+      const messageId = row.id;
 
       const attachments: MessageAttachment[] = [];
 
@@ -706,7 +707,7 @@ export function ChatWorkspace({
         const { data: att, error: attErr } = await supabase
           .from("message_attachments")
           .insert({
-            message_id: row.id,
+            message_id: messageId,
             url: pub.publicUrl,
             filename: forcedName || file.name,
             content_type: file.type || "application/octet-stream",
@@ -727,7 +728,7 @@ export function ChatWorkspace({
         const { data: att, error: attErr } = await supabase
           .from("message_attachments")
           .insert({
-            message_id: row.id,
+            message_id: messageId,
             url: gifUrl,
             filename: gifName || "tenor.gif",
             content_type: "image/gif",
@@ -739,7 +740,7 @@ export function ChatWorkspace({
           // Fallback: show gif via content link only
           attachments.push({
             id: `tmp-${Date.now()}`,
-            message_id: row.id,
+            message_id: messageId,
             url: gifUrl,
             filename: gifName || "tenor.gif",
             content_type: "image/gif",
@@ -750,11 +751,12 @@ export function ChatWorkspace({
       const reply_to = replyToId
         ? messages.find((m) => m.id === replyToId) ?? null
         : null;
+      const sent = row;
 
       setMessages((prev) => {
-        if (prev.some((m) => m.id === row.id)) {
+        if (prev.some((m) => m.id === sent.id)) {
           return prev.map((m) =>
-            m.id === row.id
+            m.id === sent.id
               ? { ...m, attachments: [...(m.attachments ?? []), ...attachments] }
               : m,
           );
@@ -762,8 +764,8 @@ export function ChatWorkspace({
         return [
           ...prev,
           {
-            ...row,
-            author: row.author ?? profile,
+            ...sent,
+            author: sent.author ?? profile,
             reply_to,
             reactions: [],
             attachments,

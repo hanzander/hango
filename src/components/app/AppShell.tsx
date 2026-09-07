@@ -18,6 +18,7 @@ import { UserBar } from "./UserBar";
 import { VoiceConnectedBar } from "./VoiceConnectedBar";
 import { ProfileEditor } from "./ProfileEditor";
 import { UserProfilePopout } from "./UserProfilePopout";
+import { CreateChannelModal } from "./CreateChannelModal";
 import { RolesModal } from "./RolesModal";
 import { MembersPanel, type ServerMember } from "./MembersPanel";
 import { useServerPresence } from "@/hooks/useServerPresence";

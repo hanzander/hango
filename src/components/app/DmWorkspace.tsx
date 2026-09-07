@@ -38,7 +38,7 @@ export function DmWorkspace({
           const p = m.profiles as Profile | Profile[] | null;
           return Array.isArray(p) ? p[0] : p;
         })
-        .filter((p): p is Profile => Boolean(p) && p.id !== userId);
+        .filter((p): p is Profile => p != null && p.id !== userId);
       if (!cancelled) setOther(others[0] ?? null);
 
       const { data } = await supabase
