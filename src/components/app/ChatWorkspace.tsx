@@ -235,6 +235,7 @@ export function ChatWorkspace({
       const { data: serverMuteRows } = await supabase
         .from("server_mutes")
         .select("server_id");
+      // Mute tables may not exist until migration 005 — ignore errors
 
       if (cancelled) return;
 
@@ -277,19 +278,21 @@ export function ChatWorkspace({
 
     let cancelled = false;
     const supabase = createClient();
+    const channelId = activeChannel.id;
 
     async function loadMessages() {
       setLoadingMessages(true);
       const { data, error } = await supabase
         .from("messages")
         .select("*, author:profiles(*)")
-        .eq("channel_id", activeChannel!.id)
+        .eq("channel_id", channelId)
         .order("created_at", { ascending: true })
         .limit(200);
 
       if (cancelled) return;
       if (error) {
         console.error(error);
+        toast(error.message || "Failed to load messages", "danger");
         setMessages([]);
         setLoadingMessages(false);
         return;
@@ -338,17 +341,18 @@ export function ChatWorkspace({
     void loadMessages();
 
     const channel = supabase
-      .channel(`messages:${activeChannel.id}`)
+      .channel(`messages:${channelId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `channel_id=eq.${activeChannel.id}`,
+          filter: `channel_id=eq.${channelId}`,
         },
         async (payload) => {
           const row = payload.new as Message;
+          if (row.deleted_at) return;
           const { data: author } = await supabase
             .from("profiles")
             .select("*")
@@ -385,7 +389,7 @@ export function ChatWorkspace({
           event: "UPDATE",
           schema: "public",
           table: "messages",
-          filter: `channel_id=eq.${activeChannel.id}`,
+          filter: `channel_id=eq.${channelId}`,
         },
         (payload) => {
           const row = payload.new as Message;
@@ -412,46 +416,12 @@ export function ChatWorkspace({
           event: "DELETE",
           schema: "public",
           table: "messages",
-          filter: `channel_id=eq.${activeChannel.id}`,
+          filter: `channel_id=eq.${channelId}`,
         },
         (payload) => {
           const row = payload.old as { id?: string };
           if (!row.id) return;
           setMessages((prev) => prev.filter((m) => m.id !== row.id));
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "message_reactions",
-        },
-        async () => {
-          const ids = messages.map((m) => m.id);
-          // refresh reactions for visible messages via re-fetch of current list
-          const { data } = await supabase
-            .from("messages")
-            .select("id")
-            .eq("channel_id", activeChannel!.id)
-            .is("deleted_at", null)
-            .limit(200);
-          const msgIds = ((data as { id: string }[]) ?? []).map((r) => r.id);
-          if (!msgIds.length) return;
-          const { data: reactions } = await supabase
-            .from("message_reactions")
-            .select("*")
-            .in("message_id", msgIds);
-          const byMsg = new Map<string, MessageReaction[]>();
-          for (const r of (reactions as MessageReaction[]) ?? []) {
-            const list = byMsg.get(r.message_id) ?? [];
-            list.push(r);
-            byMsg.set(r.message_id, list);
-          }
-          setMessages((prev) =>
-            prev.map((m) => ({ ...m, reactions: byMsg.get(m.id) ?? [] })),
-          );
-          void ids;
         },
       )
       .on("broadcast", { event: "typing" }, ({ payload }) => {
@@ -468,14 +438,51 @@ export function ChatWorkspace({
 
     typingChannelRef.current = channel;
 
+    // Reactions on a separate channel so a missing table/publication can't break chat
+    const reactionsChannel = supabase
+      .channel(`reactions:${channelId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "message_reactions",
+        },
+        async () => {
+          const { data } = await supabase
+            .from("messages")
+            .select("id")
+            .eq("channel_id", channelId)
+            .limit(200);
+          const msgIds = ((data as { id: string }[]) ?? []).map((r) => r.id);
+          if (!msgIds.length) return;
+          const { data: reactions, error } = await supabase
+            .from("message_reactions")
+            .select("*")
+            .in("message_id", msgIds);
+          if (error) return;
+          const byMsg = new Map<string, MessageReaction[]>();
+          for (const r of (reactions as MessageReaction[]) ?? []) {
+            const list = byMsg.get(r.message_id) ?? [];
+            list.push(r);
+            byMsg.set(r.message_id, list);
+          }
+          setMessages((prev) =>
+            prev.map((m) => ({ ...m, reactions: byMsg.get(m.id) ?? [] })),
+          );
+        },
+      )
+      .subscribe();
+
     return () => {
       cancelled = true;
       typingChannelRef.current = null;
       if (typingClearRef.current) clearTimeout(typingClearRef.current);
       void supabase.removeChannel(channel);
+      void supabase.removeChannel(reactionsChannel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on channel change; reaction handler refreshes from DB
-  }, [configured, activeChannel?.id, profile?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on channel change
+  }, [configured, activeChannel?.id, profile?.id, toast]);
 
   // Server-wide chat notifications
   useEffect(() => {
@@ -517,17 +524,8 @@ export function ChatWorkspace({
 
           if (serverMuted || mutedChannels.has(row.channel_id)) return;
 
-          const mentioned =
-            row.content.includes(`@${myName}`) ||
-            row.content.includes("@everyone") ||
-            row.content.includes("@here");
-
-          // Always ping for mentions; otherwise normal channel ping
-          if (mentioned || row.channel_id === activeChannelIdRef.current) {
-            playMessageNotification();
-          } else {
-            playMessageNotification();
-          }
+          void myName;
+          playMessageNotification();
         },
       )
       .subscribe();
@@ -575,19 +573,49 @@ export function ChatWorkspace({
 
       if (!profile) return;
       const supabase = createClient();
-      const { error } = await supabase.from("messages").insert({
+
+      // Only send reply_to_id when set — column may not exist until migration 005
+      const payload: Record<string, unknown> = {
         channel_id: activeChannel.id,
         author_id: profile.id,
         content,
-        reply_to_id: replyToId ?? null,
-      });
+      };
+      if (replyToId) payload.reply_to_id = replyToId;
+
+      const { data, error } = await supabase
+        .from("messages")
+        .insert(payload)
+        .select("*, author:profiles(*)")
+        .single();
+
       if (error) {
         toast(error.message, "danger");
         throw error;
       }
+
+      const row = data as Message;
+      const reply_to = replyToId
+        ? messages.find((m) => m.id === replyToId) ??
+          (row.reply_to_id
+            ? ({ id: row.reply_to_id, content: "", author_id: "", channel_id: "", created_at: "" } as Message)
+            : null)
+        : null;
+
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === row.id)) return prev;
+        return [
+          ...prev,
+          {
+            ...row,
+            author: row.author ?? profile,
+            reply_to,
+            reactions: [],
+          },
+        ];
+      });
       setReplyTo(null);
     },
-    [activeChannel, configured, profile, demoMessages, toast],
+    [activeChannel, configured, profile, demoMessages, toast, messages],
   );
 
   const handleEdit = useCallback(
@@ -605,11 +633,28 @@ export function ChatWorkspace({
         return;
       }
       const supabase = createClient();
-      const { error } = await supabase
+      let { error } = await supabase
         .from("messages")
         .update({ content, edited_at: new Date().toISOString() })
         .eq("id", messageId);
-      if (error) toast(error.message, "danger");
+      // edited_at may not exist until migration 005
+      if (error && /edited_at/i.test(error.message)) {
+        ({ error } = await supabase
+          .from("messages")
+          .update({ content })
+          .eq("id", messageId));
+      }
+      if (error) {
+        toast(error.message, "danger");
+        return;
+      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, content, edited_at: new Date().toISOString() }
+            : m,
+        ),
+      );
     },
     [configured, activeChannel, toast],
   );
@@ -627,11 +672,22 @@ export function ChatWorkspace({
         return;
       }
       const supabase = createClient();
-      const { error } = await supabase
+      // Prefer soft-delete; fall back to hard delete if migration 005 missing
+      let { error } = await supabase
         .from("messages")
-        .update({ deleted_at: new Date().toISOString(), content: "" })
+        .update({ deleted_at: new Date().toISOString(), content: "." })
         .eq("id", messageId);
-      if (error) toast(error.message, "danger");
+      if (error && /deleted_at/i.test(error.message)) {
+        ({ error } = await supabase
+          .from("messages")
+          .delete()
+          .eq("id", messageId));
+      }
+      if (error) {
+        toast(error.message, "danger");
+        return;
+      }
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
     },
     [configured, activeChannel, toast],
   );
