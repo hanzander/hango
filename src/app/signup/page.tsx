@@ -14,7 +14,7 @@ export default function SignupPage() {
           Create your account
         </h1>
         <p className="mb-8 text-sm text-text-secondary">
-          Sign up with email — you&apos;ll set up your profile next.
+          You’ll pick a username and photo next.
         </p>
         <AuthForm mode="signup" />
       </main>

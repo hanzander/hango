@@ -21,7 +21,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
           Welcome back
         </h1>
         <p className="mb-8 text-sm text-text-secondary">
-          Sign in to continue to Hango.
+          Enter your email and password.
         </p>
         <AuthForm mode="login" nextPath={nextPath} />
       </main>

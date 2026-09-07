@@ -48,9 +48,7 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
     setInfo(null);
 
     if (!configured) {
-      setError(
-        "Supabase is not configured. Copy .env.local.example to .env.local and add your project keys.",
-      );
+      setError("Sign-in isn’t available right now. Try again in a moment.");
       return;
     }
 
@@ -72,9 +70,7 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
           return;
         }
 
-        setInfo(
-          "Check your email to confirm your account, then sign in. (Or disable email confirm in Supabase Auth settings for local testing.)",
-        );
+        setInfo("Check your email to confirm your account, then sign in.");
         return;
       }
 
@@ -96,15 +92,6 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="mx-auto w-full max-w-sm space-y-4">
-      {!configured && (
-        <div className="rounded-lg border border-border-strong bg-bg-subtle px-3 py-2 text-sm text-text-secondary">
-          Add{" "}
-          <code className="text-text">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-          <code className="text-text">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in{" "}
-          <code className="text-text">.env.local</code> to enable auth.
-        </div>
-      )}
-
       <label className="block space-y-1.5">
         <span className="text-xs text-text-secondary">Email</span>
         <input
@@ -154,12 +141,12 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
       <p className="text-center text-sm text-text-secondary">
         {mode === "login" ? (
           <>
-            No account?{" "}
+            New here?{" "}
             <Link
               href="/signup"
               className="text-text underline-offset-4 hover:underline"
             >
-              Sign up
+              Create an account
             </Link>
           </>
         ) : (
