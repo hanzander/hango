@@ -272,25 +272,68 @@ export const SOUNDBOARD_CLIPS: SoundboardClip[] = [
 function playAudioFile(src: string, volume = VOL.soundboard) {
   if (typeof window === "undefined") return;
   try {
+    // One clip at a time — spam used to stack locally while remotes dropped packets
+    if (activeSbAudio) {
+      try {
+        activeSbAudio.pause();
+        activeSbAudio.src = "";
+      } catch {
+        /* ignore */
+      }
+      activeSbAudio = null;
+    }
     const audio = new Audio(src);
     audio.volume = Math.min(1, Math.max(0, volume));
+    activeSbAudio = audio;
+    audio.addEventListener(
+      "ended",
+      () => {
+        if (activeSbAudio === audio) activeSbAudio = null;
+      },
+      { once: true },
+    );
     void audio.play().catch(() => {
-      /* autoplay / missing file */
+      if (activeSbAudio === audio) activeSbAudio = null;
     });
   } catch {
     /* ignore */
   }
 }
 
-export function playSoundboardClip(id: string) {
+let activeSbAudio: HTMLAudioElement | null = null;
+let lastSoundboardAt = 0;
+/** Discord-like cooldown so spam stays in sync for everyone */
+export const SOUNDBOARD_COOLDOWN_MS = 1250;
+
+export function soundboardReady(): boolean {
+  return performance.now() - lastSoundboardAt >= SOUNDBOARD_COOLDOWN_MS;
+}
+
+/**
+ * Play a soundboard clip. Returns false if still on cooldown (unless force).
+ * force = true for remote playback of a clip someone else already gated.
+ */
+export function playSoundboardClip(
+  id: string,
+  opts: { force?: boolean } = {},
+): boolean {
   const clip = SOUNDBOARD_CLIPS.find((c) => c.id === id);
-  if (!clip) return;
+  if (!clip) return false;
+
+  const now = performance.now();
+  if (!opts.force && now - lastSoundboardAt < SOUNDBOARD_COOLDOWN_MS) {
+    return false;
+  }
+  lastSoundboardAt = now;
   lastPlayAt = 0;
+
   if (clip.src) {
     playAudioFile(clip.src, VOL.soundboard);
-    return;
+    return true;
   }
   if (clip.tones?.length) {
     playTones(clip.tones, { volume: VOL.soundboard });
+    return true;
   }
+  return false;
 }

@@ -31,6 +31,8 @@ import {
   unlockAudio,
   playSoundboardClip,
   SOUNDBOARD_CLIPS,
+  soundboardReady,
+  SOUNDBOARD_COOLDOWN_MS,
 } from "@/lib/call-sounds";
 import {
   getCachedDevices,
@@ -175,6 +177,7 @@ export function CallOverlay({
   const [room, setRoom] = useState<Room | null>(null);
   const [speakingIds, setSpeakingIds] = useState<string[]>([]);
   const [boardOpen, setBoardOpen] = useState(false);
+  const [boardReady, setBoardReady] = useState(true);
 
   const roomRef = useRef<Room | null>(null);
   const mediaBusyRef = useRef(false);
@@ -312,7 +315,8 @@ export function CallOverlay({
           const text = new TextDecoder().decode(payload);
           const msg = JSON.parse(text) as { t?: string; id?: string };
           if (msg.t === "sb" && typeof msg.id === "string") {
-            playSoundboardClip(msg.id);
+            // Sender already rate-limited; force play so we stay in sync
+            playSoundboardClip(msg.id, { force: true });
           }
         } catch {
           /* ignore */
@@ -551,11 +555,16 @@ export function CallOverlay({
 
   async function fireSoundboard(id: string) {
     unlockAudio();
-    playSoundboardClip(id);
+    // Gate locally first — only broadcast what we actually play
+    if (!playSoundboardClip(id)) return;
+    setBoardReady(false);
+    window.setTimeout(() => setBoardReady(true), SOUNDBOARD_COOLDOWN_MS);
     const r = roomRef.current;
     if (!r || r.state !== ConnectionState.Connected) return;
     try {
-      const data = new TextEncoder().encode(JSON.stringify({ t: "sb", id }));
+      const data = new TextEncoder().encode(
+        JSON.stringify({ t: "sb", id, at: Date.now() }),
+      );
       await r.localParticipant.publishData(data, { reliable: true });
     } catch {
       /* ignore */
@@ -895,16 +904,21 @@ export function CallOverlay({
                     <button
                       key={clip.id}
                       type="button"
+                      disabled={!boardReady}
                       onClick={() => {
                         void fireSoundboard(clip.id);
-                        setBoardOpen(false);
                       }}
-                      className="rounded-lg bg-white/5 px-2 py-2 text-xs text-white/80 hover:bg-white/10 hover:text-white"
+                      className="rounded-lg bg-white/5 px-2 py-2 text-xs text-white/80 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {clip.label}
                     </button>
                   ))}
                 </div>
+                {!boardReady && (
+                  <p className="border-t border-white/10 px-3 py-1.5 text-[10px] text-white/35">
+                    Cooldown…
+                  </p>
+                )}
               </div>
             )}
           </div>
