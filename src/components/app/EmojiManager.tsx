@@ -115,11 +115,11 @@ export function EmojiManager({
     <div className="fixed inset-0 z-[85] flex items-center justify-center p-4">
       <button
         type="button"
-        className="absolute inset-0 bg-black/70"
+        className="hango-anim-fade absolute inset-0 bg-black/70 backdrop-blur-[2px]"
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-bg-elevated shadow-2xl">
+      <div className="hango-anim-pop relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-bg-elevated shadow-2xl">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-sm font-semibold">Server Emoji</h2>
           <p className="text-xs text-text-muted">Click to insert · :name:</p>

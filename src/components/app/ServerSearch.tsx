@@ -82,14 +82,14 @@ export function ServerSearch({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[85] flex items-start justify-center bg-black/60 p-4 pt-[12vh]">
+    <div className="fixed inset-0 z-[85] flex items-start justify-center bg-black/60 p-4 pt-[12vh] hango-anim-fade">
       <button
         type="button"
         className="absolute inset-0"
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-bg-elevated shadow-2xl">
+      <div className="hango-anim-pop relative w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-bg-elevated shadow-2xl">
         <div className="border-b border-border px-4 py-3">
           <input
             autoFocus

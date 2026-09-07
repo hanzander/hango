@@ -23,10 +23,12 @@ type MembersPanelProps = {
   currentUserId?: string;
   isOwner?: boolean;
   roles?: ServerRole[];
+  memberRoleIds?: Record<string, string[]>;
   onOpenProfile?: (userId: string) => void;
   onKick?: (userId: string) => void;
   onTimeout?: (userId: string, minutes: number) => void;
   onAssignRole?: (userId: string, roleId: string) => void;
+  onRemoveRole?: (userId: string, roleId: string) => void;
   onMessageUser?: (userId: string) => void;
 };
 
@@ -36,6 +38,7 @@ type Row = {
   avatar_url: string | null;
   inVoice: boolean;
   status: "online" | "offline";
+  roleIds: string[];
 };
 
 export function MembersPanel({
@@ -45,13 +48,19 @@ export function MembersPanel({
   currentUserId,
   isOwner,
   roles = [],
+  memberRoleIds = {},
   onOpenProfile,
   onKick,
   onTimeout,
   onAssignRole,
+  onRemoveRole,
   onMessageUser,
 }: MembersPanelProps) {
   const speaking = useMemo(() => new Set(speakingIds), [speakingIds]);
+  const rolesById = useMemo(
+    () => new Map(roles.map((r) => [r.id, r])),
+    [roles],
+  );
   const { menu, open, close } = useContextMenu();
 
   const rows = useMemo(() => {
@@ -64,6 +73,7 @@ export function MembersPanel({
         avatar_url: p?.avatar_url ?? m.avatar_url,
         inVoice: Boolean(p?.voice_channel_id),
         status: p ? "online" : "offline",
+        roleIds: memberRoleIds[m.id] ?? [],
       };
     });
 
@@ -75,6 +85,7 @@ export function MembersPanel({
         avatar_url: p.avatar_url,
         inVoice: Boolean(p.voice_channel_id),
         status: "online",
+        roleIds: memberRoleIds[p.user_id] ?? [],
       });
     }
 
@@ -86,10 +97,20 @@ export function MembersPanel({
       });
     });
     return list;
-  }, [serverMembers, online]);
+  }, [serverMembers, online, memberRoleIds]);
 
   const onlineRows = rows.filter((r) => r.status === "online");
   const offline = rows.filter((r) => r.status === "offline");
+
+  function topRole(m: Row): ServerRole | null {
+    let best: ServerRole | null = null;
+    for (const id of m.roleIds) {
+      const role = rolesById.get(id);
+      if (!role) continue;
+      if (!best || role.position > best.position) best = role;
+    }
+    return best;
+  }
 
   function menuFor(m: Row): ContextMenuItem[] {
     const items: ContextMenuItem[] = [
@@ -106,9 +127,13 @@ export function MembersPanel({
     }
     if (isOwner && m.user_id !== currentUserId) {
       for (const role of roles) {
+        const has = m.roleIds.includes(role.id);
         items.push({
-          label: `Assign ${role.name}`,
-          onClick: () => onAssignRole?.(m.user_id, role.id),
+          label: has ? `Remove ${role.name}` : `Give ${role.name}`,
+          onClick: () =>
+            has
+              ? onRemoveRole?.(m.user_id, role.id)
+              : onAssignRole?.(m.user_id, role.id),
         });
       }
       items.push({
@@ -125,7 +150,7 @@ export function MembersPanel({
   }
 
   return (
-    <aside className="hidden h-full w-56 shrink-0 flex-col border-l border-border bg-sidebar lg:flex">
+    <aside className="hidden h-full w-60 shrink-0 flex-col border-l border-border bg-sidebar lg:flex">
       <div className="flex h-12 items-center border-b border-border px-4">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
           Members — {rows.length}
@@ -136,10 +161,12 @@ export function MembersPanel({
           {onlineRows.length === 0 ? (
             <li className="px-2 py-1 text-xs text-text-muted">Nobody online</li>
           ) : (
-            onlineRows.map((m) => (
+            onlineRows.map((m, i) => (
               <MemberRow
                 key={m.user_id}
                 member={m}
+                role={topRole(m)}
+                index={i}
                 speaking={speaking.has(m.user_id)}
                 onOpen={() => onOpenProfile?.(m.user_id)}
                 onContextMenu={(e) => open(e, menuFor(m))}
@@ -152,10 +179,12 @@ export function MembersPanel({
           {offline.length === 0 ? (
             <li className="px-2 py-1 text-xs text-text-muted">None</li>
           ) : (
-            offline.map((m) => (
+            offline.map((m, i) => (
               <MemberRow
                 key={m.user_id}
                 member={m}
+                role={topRole(m)}
+                index={i + onlineRows.length}
                 speaking={false}
                 onOpen={() => onOpenProfile?.(m.user_id)}
                 onContextMenu={(e) => open(e, menuFor(m))}
@@ -188,24 +217,31 @@ function Section({
 
 function MemberRow({
   member,
+  role,
+  index,
   speaking,
   onOpen,
   onContextMenu,
 }: {
   member: Row;
+  role: ServerRole | null;
+  index: number;
   speaking: boolean;
   onOpen?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const dim = member.status === "offline";
   return (
-    <li>
+    <li
+      className="hango-anim-fade-up"
+      style={{ animationDelay: `${Math.min(index, 12) * 28}ms` }}
+    >
       <button
         type="button"
         onClick={onOpen}
         onContextMenu={onContextMenu}
         className={cn(
-          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-bg-hover",
+          "group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition duration-150 hover:bg-bg-hover hover:translate-x-0.5",
           dim && "opacity-50",
         )}
       >
@@ -231,13 +267,24 @@ function MemberRow({
           />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm text-text">{member.display_name}</p>
-          {member.inVoice && (
+          <p
+            className="truncate text-sm font-medium transition-colors"
+            style={role ? { color: role.color } : undefined}
+          >
+            <span className={role ? undefined : "text-text"}>
+              {member.display_name}
+            </span>
+          </p>
+          {member.inVoice ? (
             <p className="flex items-center gap-1 truncate text-[10px] text-emerald-400/80">
               <VoiceGlyph />
               Voice
             </p>
-          )}
+          ) : role ? (
+            <p className="truncate text-[10px] text-text-muted opacity-0 transition group-hover:opacity-100">
+              {role.name}
+            </p>
+          ) : null}
         </div>
       </button>
     </li>

@@ -106,7 +106,8 @@ type AppShellProps = {
   onUpdateTopic?: (topic: string) => void;
   onKick?: (userId: string) => void;
   onTimeout?: (userId: string, minutes: number) => void;
-  onAssignRole?: (userId: string, roleId: string) => void;
+  onAssignRole?: (userId: string, roleId: string) => void | Promise<void>;
+  onRemoveRole?: (userId: string, roleId: string) => void | Promise<void>;
   onMessageUser?: (userId: string) => void;
   onServerUpdated?: (patch: Partial<Server>) => void;
   onSignOut?: () => void;
@@ -208,6 +209,7 @@ export function AppShell({
   onKick,
   onTimeout,
   onAssignRole,
+  onRemoveRole,
   onMessageUser,
   onServerUpdated,
   onSignOut,
@@ -221,6 +223,9 @@ export function AppShell({
   const [callKey, setCallKey] = useState(0);
   const [serverMembers, setServerMembers] = useState<ServerMember[]>([]);
   const [roles, setRoles] = useState<ServerRole[]>([]);
+  const [memberRoleIds, setMemberRoleIds] = useState<Record<string, string[]>>(
+    {},
+  );
   const [liveRoster, setLiveRoster] = useState<
     { user_id: string; display_name: string }[]
   >([]);
@@ -424,12 +429,55 @@ export function AppShell({
       if (!cancelled) setRoles((data as ServerRole[]) ?? []);
     }
 
+    async function loadMemberRoles() {
+      const { data } = await supabase
+        .from("member_roles")
+        .select("user_id, role_id")
+        .eq("server_id", server.id);
+      if (cancelled) return;
+      const map: Record<string, string[]> = {};
+      for (const row of data ?? []) {
+        const uid = row.user_id as string;
+        const rid = row.role_id as string;
+        if (!map[uid]) map[uid] = [];
+        map[uid].push(rid);
+      }
+      setMemberRoleIds(map);
+    }
+
     void loadMembers();
     void loadRoles();
+    void loadMemberRoles();
     return () => {
       cancelled = true;
     };
   }, [demo, server.id]);
+
+  const assignRole = useCallback(
+    async (targetUserId: string, roleId: string) => {
+      setMemberRoleIds((prev) => {
+        const cur = prev[targetUserId] ?? [];
+        if (cur.includes(roleId)) return prev;
+        return { ...prev, [targetUserId]: [...cur, roleId] };
+      });
+      await onAssignRole?.(targetUserId, roleId);
+    },
+    [onAssignRole],
+  );
+
+  const removeRole = useCallback(
+    async (targetUserId: string, roleId: string) => {
+      setMemberRoleIds((prev) => {
+        const cur = prev[targetUserId] ?? [];
+        return {
+          ...prev,
+          [targetUserId]: cur.filter((id) => id !== roleId),
+        };
+      });
+      await onRemoveRole?.(targetUserId, roleId);
+    },
+    [onRemoveRole],
+  );
 
   const voiceChannelId =
     inCall && voiceSession ? voiceSession.channelId : null;
@@ -480,7 +528,7 @@ export function AppShell({
     : 0;
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-bg text-text">
+    <div className="hango-anim-fade flex h-dvh w-full overflow-hidden bg-bg text-text">
       <div
         className={cn(
           "fixed inset-0 z-40 bg-black/60 transition-opacity md:hidden",
@@ -739,10 +787,12 @@ export function AppShell({
           currentUserId={userId}
           isOwner={server.owner_id === userId}
           roles={roles}
+          memberRoleIds={memberRoleIds}
           onOpenProfile={(id) => void openProfile(id)}
           onKick={onKick}
           onTimeout={onTimeout}
-          onAssignRole={onAssignRole}
+          onAssignRole={(id, roleId) => void assignRole(id, roleId)}
+          onRemoveRole={(id, roleId) => void removeRole(id, roleId)}
           onMessageUser={onMessageUser}
           online={(() => {
             const byId = new Map(online.map((u) => [u.user_id, u]));
@@ -841,7 +891,17 @@ export function AppShell({
       {!demo && (
         <RolesModal
           open={rolesOpen}
-          onClose={() => setRolesOpen(false)}
+          onClose={() => {
+            setRolesOpen(false);
+            void createClient()
+              .from("server_roles")
+              .select("*")
+              .eq("server_id", server.id)
+              .order("position")
+              .then(({ data }) => {
+                if (data) setRoles(data as ServerRole[]);
+              });
+          }}
           serverId={server.id}
           isOwner={server.owner_id === userId}
         />
@@ -896,6 +956,17 @@ export function AppShell({
         open={Boolean(popoutProfile)}
         profile={popoutProfile}
         onClose={() => setPopoutProfile(null)}
+        isOwner={server.owner_id === userId}
+        isSelf={popoutProfile?.id === userId}
+        roles={roles}
+        assignedRoleIds={
+          popoutProfile ? (memberRoleIds[popoutProfile.id] ?? []) : []
+        }
+        onAssignRole={(id, roleId) => void assignRole(id, roleId)}
+        onRemoveRole={(id, roleId) => void removeRole(id, roleId)}
+        onMessage={onMessageUser}
+        onKick={onKick}
+        onTimeout={onTimeout}
       />
     </div>
   );

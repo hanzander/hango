@@ -110,3 +110,93 @@ html[data-density="compact"] .hango-msg {
   padding-bottom: 0.125rem;
 }
 
+/* —— Motion —— */
+@keyframes hango-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes hango-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes hango-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hango-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.hango-anim-fade {
+  animation: hango-fade 0.2s ease-out both;
+}
+
+.hango-anim-pop {
+  animation: hango-pop 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hango-anim-fade-up {
+  animation: hango-fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hango-anim-slide {
+  animation: hango-slide-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hango-interactive {
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease,
+    opacity 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hango-interactive:hover {
+  transform: translateY(-1px);
+}
+
+.hango-interactive:active {
+  transform: translateY(0) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hango-anim-fade,
+  .hango-anim-pop,
+  .hango-anim-fade-up,
+  .hango-anim-slide {
+    animation: none !important;
+  }
+
+  .hango-interactive:hover,
+  .hango-interactive:active {
+    transform: none;
+  }
+}
+
+

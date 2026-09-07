@@ -137,7 +137,7 @@ export function ChannelList({
         {serverMenuOpen && (
           <div
             role="menu"
-            className="absolute left-2 right-2 top-[calc(100%-4px)] z-50 overflow-hidden rounded-lg border border-border bg-bg-elevated py-1.5 shadow-xl"
+            className="hango-anim-pop absolute left-2 right-2 top-[calc(100%-4px)] z-50 overflow-hidden rounded-lg border border-border bg-bg-elevated py-1.5 shadow-xl"
           >
             {onOpenSearch && (
               <MenuItem

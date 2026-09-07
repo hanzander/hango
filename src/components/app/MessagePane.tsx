@@ -312,7 +312,7 @@ function MessageRow({
   return (
     <li
       className={cn(
-        "group relative flex gap-3 rounded-lg px-1 hover:bg-white/[0.03]",
+        "hango-msg group relative flex gap-3 rounded-lg px-1 transition-colors duration-150 hover:bg-white/[0.03]",
         grouped && !compact && "mt-0",
         compact && "py-0.5",
         message.pinned_at && "bg-amber-500/[0.04]",

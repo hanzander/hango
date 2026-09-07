@@ -56,13 +56,13 @@ export function CreateChannelModal({
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <button
         type="button"
-        className="absolute inset-0 bg-black/70"
+        className="hango-anim-fade absolute inset-0 bg-black/70 backdrop-blur-[2px]"
         aria-label="Close"
         onClick={onClose}
       />
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-bg-elevated shadow-2xl"
+        className="hango-anim-pop relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-bg-elevated shadow-2xl"
       >
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-sm font-semibold text-text">Create Channel</h2>

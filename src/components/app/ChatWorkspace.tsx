@@ -1259,6 +1259,25 @@ export function ChatWorkspace({
     [activeServer, toast],
   );
 
+  const handleRemoveRole = useCallback(
+    async (userId: string, roleId: string) => {
+      if (!activeServer) return;
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("member_roles")
+        .delete()
+        .eq("server_id", activeServer.id)
+        .eq("user_id", userId)
+        .eq("role_id", roleId);
+      if (error) {
+        toast(error.message, "danger");
+        return;
+      }
+      toast("Role removed", "success");
+    },
+    [activeServer, toast],
+  );
+
   const handleOpenDm = useCallback(
     async (otherUserId: string) => {
       const supabase = createClient();
@@ -1344,6 +1363,7 @@ export function ChatWorkspace({
       onKick={handleKick}
       onTimeout={handleTimeout}
       onAssignRole={handleAssignRole}
+      onRemoveRole={handleRemoveRole}
       onMessageUser={handleOpenDm}
       onServerUpdated={(patch) =>
         setServers((prev) =>

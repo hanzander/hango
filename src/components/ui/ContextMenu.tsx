@@ -60,7 +60,7 @@ export function ContextMenuPortal({
         }}
       />
       <div
-        className="fixed z-[91] min-w-[180px] overflow-hidden rounded-lg border border-border bg-bg-elevated py-1 shadow-2xl"
+        className="fixed z-[91] min-w-[180px] overflow-hidden rounded-lg border border-border bg-bg-elevated py-1 shadow-2xl hango-anim-pop"
         style={{ left: menu.x, top: menu.y }}
       >
         {menu.items.map((item) => (
