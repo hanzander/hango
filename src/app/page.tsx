@@ -94,8 +94,8 @@ export default async function HomePage() {
             </span>
           </h1>
           <p className="mt-6 max-w-md text-base leading-relaxed text-text-secondary md:text-lg">
-            Hang out with your people. Text, voice, and video — all in one
-            place.
+            <span className="text-text">hango</span>
+            <span className="text-text-secondary">ut with your people.</span>
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-3">
             <Link
