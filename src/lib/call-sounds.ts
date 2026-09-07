@@ -206,10 +206,17 @@ export function playMessageNotification() {
 export type SoundboardClip = {
   id: string;
   label: string;
-  tones: Tone[];
+  tones?: Tone[];
+  /** Public URL for an mp3/wav clip (e.g. /sounds/leclerc.mp3) */
+  src?: string;
 };
 
 export const SOUNDBOARD_CLIPS: SoundboardClip[] = [
+  {
+    id: "leclerc",
+    label: "Leclerc",
+    src: "/sounds/leclerc.mp3",
+  },
   {
     id: "horn",
     label: "Horn",
@@ -262,9 +269,28 @@ export const SOUNDBOARD_CLIPS: SoundboardClip[] = [
   },
 ];
 
+function playAudioFile(src: string, volume = VOL.soundboard) {
+  if (typeof window === "undefined") return;
+  try {
+    const audio = new Audio(src);
+    audio.volume = Math.min(1, Math.max(0, volume));
+    void audio.play().catch(() => {
+      /* autoplay / missing file */
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
 export function playSoundboardClip(id: string) {
   const clip = SOUNDBOARD_CLIPS.find((c) => c.id === id);
   if (!clip) return;
   lastPlayAt = 0;
-  playTones(clip.tones, { volume: VOL.soundboard });
+  if (clip.src) {
+    playAudioFile(clip.src, VOL.soundboard);
+    return;
+  }
+  if (clip.tones?.length) {
+    playTones(clip.tones, { volume: VOL.soundboard });
+  }
 }
