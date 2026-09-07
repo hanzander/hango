@@ -384,15 +384,12 @@ export function AppShell({
           </Link>
         </div>
 
-        {/* Keep LiveKit mounted while browsing other channels */}
+        {/* Keep LiveKit mounted; full UI on Lounge, Discord PiP elsewhere */}
         {inCall && voiceSession && !demo && (
           <div
-            className={cn(
-              viewingCallUi
-                ? "flex min-h-0 flex-1 flex-col"
-                : "pointer-events-none fixed left-0 top-0 z-[-1] h-px w-px overflow-hidden opacity-0",
-            )}
-            aria-hidden={!viewingCallUi}
+            className={
+              viewingCallUi ? "flex min-h-0 flex-1 flex-col" : undefined
+            }
           >
             <CallErrorBoundary onReset={handleCallReset}>
               <MemoCallSlot
@@ -400,6 +397,12 @@ export function AppShell({
                 callKey={callKey}
                 channelName={voiceSession.channelName}
                 displayName={displayName}
+                variant={viewingCallUi ? "full" : "pip"}
+                returnHref={
+                  demo
+                    ? `/app/demo?c=${voiceSession.channelId}`
+                    : `/app/${server.id}/${voiceSession.channelId}`
+                }
                 onConnected={handleCallConnected}
                 onDisconnected={handleCallDisconnected}
                 onLeave={handleCallLeave}
@@ -532,6 +535,8 @@ const MemoCallSlot = memo(function MemoCallSlot({
   callKey,
   channelName,
   displayName,
+  variant,
+  returnHref,
   onConnected,
   onDisconnected,
   onLeave,
@@ -541,6 +546,8 @@ const MemoCallSlot = memo(function MemoCallSlot({
   callKey: number;
   channelName: string;
   displayName: string;
+  variant: "full" | "pip";
+  returnHref: string;
   onConnected: () => void;
   onDisconnected: () => void;
   onLeave: () => void;
@@ -554,6 +561,8 @@ const MemoCallSlot = memo(function MemoCallSlot({
       channelId={channelId}
       channelName={channelName}
       displayName={displayName}
+      variant={variant}
+      returnHref={returnHref}
       onConnected={onConnected}
       onDisconnected={onDisconnected}
       onLeave={onLeave}

@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import {
   useCallback,
   useEffect,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import {
@@ -46,6 +48,10 @@ type CallOverlayProps = {
   onRemoteRoster?: (
     peers: { user_id: string; display_name: string }[],
   ) => void;
+  /** Discord-style mini window while browsing text channels */
+  variant?: "full" | "pip";
+  /** Link back to the voice channel (PiP header) */
+  returnHref?: string;
 };
 
 type PeerSnapshot = {
@@ -142,6 +148,8 @@ export function CallOverlay({
   onConnected,
   onDisconnected,
   onRemoteRoster,
+  variant = "full",
+  returnHref,
 }: CallOverlayProps) {
   const [status, setStatus] = useState<
     "connecting" | "live" | "error"
@@ -501,6 +509,22 @@ export function CallOverlay({
           : "grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto";
 
   if (status === "error") {
+    if (variant === "pip") {
+      return (
+        <DraggablePip>
+          <div className="flex h-full flex-col items-center justify-center gap-2 bg-[#111] p-3 text-center">
+            <p className="text-xs text-red-300">{error || "Call failed"}</p>
+            <button
+              type="button"
+              onClick={handleLeave}
+              className="rounded-full bg-white/10 px-3 py-1 text-xs text-white"
+            >
+              Dismiss
+            </button>
+          </div>
+        </DraggablePip>
+      );
+    }
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[#050505] px-6 text-center">
         <p className="text-sm text-danger">{error || "Call failed"}</p>
@@ -512,6 +536,125 @@ export function CallOverlay({
           Back
         </button>
       </div>
+    );
+  }
+
+  if (variant === "pip") {
+    const focus =
+      peers.find((p) => !p.isLocal && p.camOn) ||
+      peers.find((p) => p.isLocal) ||
+      peers[0];
+
+    return (
+      <DraggablePip>
+        <div className="flex h-full flex-col overflow-hidden rounded-xl bg-[#0c0c0c] shadow-2xl ring-1 ring-white/15">
+          <div
+            data-pip-drag
+            className="flex cursor-grab items-center gap-2 border-b border-white/10 bg-[#151515] px-2.5 py-1.5 active:cursor-grabbing"
+          >
+            <span
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full",
+                live ? "bg-emerald-400" : "animate-pulse bg-amber-400",
+              )}
+            />
+            {returnHref ? (
+              <Link
+                href={returnHref}
+                className="min-w-0 flex-1 truncate text-xs font-medium text-white hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {channelName}
+              </Link>
+            ) : (
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-white">
+                {channelName}
+              </span>
+            )}
+            <span className="text-[10px] text-white/40">{peers.length}</span>
+            <button
+              type="button"
+              title="Leave call"
+              onClick={handleLeave}
+              className="rounded p-1 text-red-300 hover:bg-red-500/20"
+            >
+              <IconLeave />
+            </button>
+          </div>
+
+          <div className="relative min-h-0 flex-1 bg-[#080808]">
+            {focus ? (
+              <PeerTile peer={focus} room={room} compact />
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-white/40">
+                {live ? "In call" : "Connecting…"}
+              </div>
+            )}
+            {peers.length > 1 && (
+              <div className="absolute bottom-2 right-2 flex -space-x-2">
+                {peers.slice(0, 4).map((p) => (
+                  <div
+                    key={p.identity}
+                    className="rounded-full ring-2 ring-black"
+                    title={p.name}
+                  >
+                    <Avatar name={p.name} size="sm" className="!h-6 !w-6 !text-[9px]" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-center gap-1 border-t border-white/10 bg-[#111] px-2 py-1.5">
+            <button
+              type="button"
+              title={micOn ? "Mute" : "Unmute"}
+              disabled={!room || mediaBusy}
+              onClick={() => void toggleMic()}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                micOn ? "bg-white/10 text-white hover:bg-white/15" : "bg-white text-black",
+              )}
+            >
+              <span className="flex h-4 w-4 items-center justify-center [&_svg]:h-4 [&_svg]:w-4">
+                {micOn ? <IconMic /> : <IconMicOff />}
+              </span>
+            </button>
+            <button
+              type="button"
+              title={camOn ? "Camera off" : "Camera on"}
+              disabled={!room || mediaBusy}
+              onClick={() => void toggleCam()}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                camOn ? "bg-white/10 text-white hover:bg-white/15" : "bg-white/10 text-white/70",
+              )}
+            >
+              <span className="flex h-4 w-4 items-center justify-center [&_svg]:h-4 [&_svg]:w-4">
+                {camOn ? <IconCamera /> : <IconCameraOff />}
+              </span>
+            </button>
+            {returnHref && (
+              <Link
+                href={returnHref}
+                className="ml-1 rounded-full bg-emerald-500/90 px-2.5 py-1.5 text-[10px] font-medium text-black hover:bg-emerald-400"
+              >
+                Open
+              </Link>
+            )}
+          </div>
+
+          {audioBlocked && (
+            <button
+              type="button"
+              className="bg-emerald-500/20 px-2 py-1 text-[10px] text-emerald-100 hover:bg-emerald-500/30"
+              onClick={() => void enableCallAudio()}
+            >
+              Click to enable sound
+            </button>
+          )}
+        </div>
+      </DraggablePip>
     );
   }
 
@@ -663,9 +806,11 @@ export function CallOverlay({
 const PeerTile = function PeerTile({
   peer,
   room,
+  compact,
 }: {
   peer: PeerSnapshot;
   room: Room | null;
+  compact?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -693,7 +838,14 @@ const PeerTile = function PeerTile({
   }, [peer.camOn, peer.identity, peer.isLocal, room]);
 
   return (
-    <div className="relative aspect-video overflow-hidden rounded-2xl bg-[#0c0c0c] ring-1 ring-white/5">
+    <div
+      className={cn(
+        "relative overflow-hidden bg-[#0c0c0c]",
+        compact
+          ? "h-full w-full"
+          : "aspect-video rounded-2xl ring-1 ring-white/5",
+      )}
+    >
       {peer.camOn ? (
         <video
           ref={videoRef}
@@ -703,13 +855,28 @@ const PeerTile = function PeerTile({
           autoPlay
         />
       ) : (
-        <div className="flex h-full flex-col items-center justify-center gap-3 bg-gradient-to-b from-[#121212] to-[#080808]">
-          <Avatar name={peer.name} size="xl" />
+        <div
+          className={cn(
+            "flex h-full flex-col items-center justify-center bg-gradient-to-b from-[#121212] to-[#080808]",
+            compact ? "gap-1.5" : "gap-3",
+          )}
+        >
+          <Avatar name={peer.name} size={compact ? "lg" : "xl"} />
         </div>
       )}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8">
+      <div
+        className={cn(
+          "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent",
+          compact ? "px-2 pb-1.5 pt-5" : "px-3 pb-3 pt-8",
+        )}
+      >
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-white">
+          <span
+            className={cn(
+              "truncate font-medium text-white",
+              compact ? "text-[11px]" : "text-sm",
+            )}
+          >
             {peer.name}
             {peer.isLocal ? " (you)" : ""}
           </span>
@@ -720,6 +887,72 @@ const PeerTile = function PeerTile({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+const PIP_W = 300;
+const PIP_H = 220;
+
+function DraggablePip({ children }: { children: ReactNode }) {
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const drag = useRef<{
+    ox: number;
+    oy: number;
+    left: number;
+    top: number;
+  } | null>(null);
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const handle = (e.target as HTMLElement).closest("[data-pip-drag]");
+    if (!handle) return;
+    // Don't start drag from interactive controls inside the header
+    if ((e.target as HTMLElement).closest("a, button")) return;
+
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const left = pos?.left ?? rect.left;
+    const top = pos?.top ?? rect.top;
+    drag.current = { ox: e.clientX, oy: e.clientY, left, top };
+    el.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    const dx = e.clientX - drag.current.ox;
+    const dy = e.clientY - drag.current.oy;
+    const maxL = Math.max(8, window.innerWidth - PIP_W - 8);
+    const maxT = Math.max(8, window.innerHeight - PIP_H - 8);
+    setPos({
+      left: Math.min(maxL, Math.max(8, drag.current.left + dx)),
+      top: Math.min(maxT, Math.max(8, drag.current.top + dy)),
+    });
+  };
+
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    drag.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div
+      className="fixed z-[70]"
+      style={
+        pos
+          ? { left: pos.left, top: pos.top, width: PIP_W, height: PIP_H }
+          : { right: 16, bottom: 16, width: PIP_W, height: PIP_H }
+      }
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
+      {children}
     </div>
   );
 }
