@@ -17,7 +17,9 @@ const VOL = {
   peer: 0.16 * 1.1,
   mute: 0.1 * 1.1,
   camera: 0.09 * 1.1,
-  message: 0.2 * 1.1,
+  /** Chat pings — much louder so #general is hard to miss */
+  message: 0.55,
+  soundboard: 0.42,
 } as const;
 
 let lastMessagePlayAt = 0;
@@ -193,9 +195,76 @@ export function playMessageNotification() {
   lastPlayAt = 0;
   playTones(
     [
-      { freq: 740, start: 0, dur: 0.07, type: "sine", gain: 0.7 },
-      { freq: 980, start: 0.06, dur: 0.12, type: "sine", gain: 0.8 },
+      { freq: 740, start: 0, dur: 0.1, type: "sine", gain: 0.9 },
+      { freq: 980, start: 0.08, dur: 0.18, type: "sine", gain: 1 },
+      { freq: 1174, start: 0.16, dur: 0.14, type: "sine", gain: 0.75 },
     ],
     { volume: VOL.message },
   );
+}
+
+export type SoundboardClip = {
+  id: string;
+  label: string;
+  tones: Tone[];
+};
+
+export const SOUNDBOARD_CLIPS: SoundboardClip[] = [
+  {
+    id: "horn",
+    label: "Horn",
+    tones: [
+      { freq: 440, start: 0, dur: 0.35, type: "sawtooth", gain: 0.7 },
+      { freq: 554, start: 0.05, dur: 0.35, type: "sawtooth", gain: 0.55 },
+    ],
+  },
+  {
+    id: "bruh",
+    label: "Bruh",
+    tones: [
+      { freq: 180, start: 0, dur: 0.22, type: "triangle", gain: 0.85 },
+      { freq: 140, start: 0.15, dur: 0.28, type: "triangle", gain: 0.7 },
+    ],
+  },
+  {
+    id: "cheer",
+    label: "Cheer",
+    tones: [
+      { freq: 523, start: 0, dur: 0.1, gain: 0.7 },
+      { freq: 659, start: 0.08, dur: 0.1, gain: 0.75 },
+      { freq: 784, start: 0.16, dur: 0.18, gain: 0.8 },
+    ],
+  },
+  {
+    id: "quack",
+    label: "Quack",
+    tones: [
+      { freq: 320, start: 0, dur: 0.08, type: "square", gain: 0.55 },
+      { freq: 240, start: 0.07, dur: 0.12, type: "square", gain: 0.5 },
+    ],
+  },
+  {
+    id: "rimshot",
+    label: "Ba-dum",
+    tones: [
+      { freq: 200, start: 0, dur: 0.06, type: "triangle", gain: 0.7 },
+      { freq: 160, start: 0.08, dur: 0.06, type: "triangle", gain: 0.65 },
+      { freq: 90, start: 0.2, dur: 0.25, type: "sine", gain: 0.9 },
+    ],
+  },
+  {
+    id: "zap",
+    label: "Zap",
+    tones: [
+      { freq: 900, start: 0, dur: 0.05, type: "sawtooth", gain: 0.6 },
+      { freq: 400, start: 0.04, dur: 0.1, type: "sawtooth", gain: 0.5 },
+    ],
+  },
+];
+
+export function playSoundboardClip(id: string) {
+  const clip = SOUNDBOARD_CLIPS.find((c) => c.id === id);
+  if (!clip) return;
+  lastPlayAt = 0;
+  playTones(clip.tones, { volume: VOL.soundboard });
 }

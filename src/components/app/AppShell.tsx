@@ -16,6 +16,7 @@ import { MessagePane } from "./MessagePane";
 import { MessageComposer } from "./MessageComposer";
 import { UserBar } from "./UserBar";
 import { VoiceConnectedBar } from "./VoiceConnectedBar";
+import { ProfileEditor } from "./ProfileEditor";
 import { MembersPanel, type ServerMember } from "./MembersPanel";
 import { useServerPresence } from "@/hooks/useServerPresence";
 import { createClient } from "@/lib/supabase/client";
@@ -69,6 +70,10 @@ type AppShellProps = {
   demo?: boolean;
   onSend: (content: string) => Promise<void> | void;
   onSignOut?: () => void;
+  onProfileSaved?: (next: {
+    displayName: string;
+    avatarUrl: string | null;
+  }) => void;
 };
 
 type VoiceSession = {
@@ -139,6 +144,7 @@ export function AppShell({
   demo,
   onSend,
   onSignOut,
+  onProfileSaved,
 }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [voiceSession, setVoiceSession] = useState<VoiceSession | null>(null);
@@ -148,6 +154,15 @@ export function AppShell({
   const [liveRoster, setLiveRoster] = useState<
     { user_id: string; display_name: string }[]
   >([]);
+  const [speakingIds, setSpeakingIds] = useState<string[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [localName, setLocalName] = useState(displayName);
+  const [localAvatar, setLocalAvatar] = useState(avatarUrl ?? null);
+
+  useEffect(() => {
+    setLocalName(displayName);
+    setLocalAvatar(avatarUrl ?? null);
+  }, [displayName, avatarUrl]);
 
   const inCall = voiceSession != null;
   const isVoice = (channel.kind ?? "text") === "voice";
@@ -193,6 +208,7 @@ export function AppShell({
     setCallConnected(false);
     setVoiceSession(null);
     setLiveRoster([]);
+    setSpeakingIds([]);
   }, []);
   const handleCallLeave = useCallback(() => {
     endVoiceSession();
@@ -206,6 +222,17 @@ export function AppShell({
       setLiveRoster(peers);
     },
     [],
+  );
+  const handleSpeakingChange = useCallback((ids: string[]) => {
+    setSpeakingIds(ids);
+  }, []);
+  const handleProfileSaved = useCallback(
+    (next: { displayName: string; avatarUrl: string | null }) => {
+      setLocalName(next.displayName);
+      setLocalAvatar(next.avatarUrl);
+      onProfileSaved?.(next);
+    },
+    [onProfileSaved],
   );
 
   const joinVoice = useCallback(() => {
@@ -274,8 +301,8 @@ export function AppShell({
   const { online, inVoiceByChannel } = useServerPresence({
     serverId: server.id,
     userId: userId || "anon",
-    displayName,
-    avatarUrl,
+    displayName: localName,
+    avatarUrl: localAvatar,
     voiceChannelId,
     enabled: !demo && Boolean(userId),
   });
@@ -289,8 +316,8 @@ export function AppShell({
 
       byId.set(userId, {
         user_id: userId,
-        display_name: displayName,
-        avatar_url: avatarUrl ?? byId.get(userId)?.avatar_url ?? null,
+        display_name: localName,
+        avatar_url: localAvatar ?? byId.get(userId)?.avatar_url ?? null,
         voice_channel_id: vid,
         online_at: byId.get(userId)?.online_at ?? new Date().toISOString(),
       });
@@ -356,9 +383,10 @@ export function AppShell({
             />
           )}
           <UserBar
-            displayName={displayName}
-            avatarUrl={avatarUrl}
+            displayName={localName}
+            avatarUrl={localAvatar}
             onSignOut={onSignOut}
+            onOpenSettings={demo ? undefined : () => setSettingsOpen(true)}
           />
         </div>
       </div>
@@ -396,7 +424,7 @@ export function AppShell({
                 channelId={voiceSession.channelId}
                 callKey={callKey}
                 channelName={voiceSession.channelName}
-                displayName={displayName}
+                displayName={localName}
                 variant={viewingCallUi ? "full" : "pip"}
                 returnHref={
                   demo
@@ -407,6 +435,7 @@ export function AppShell({
                 onDisconnected={handleCallDisconnected}
                 onLeave={handleCallLeave}
                 onRemoteRoster={handleRemoteRoster}
+                onSpeakingChange={handleSpeakingChange}
               />
             </CallErrorBoundary>
           </div>
@@ -500,14 +529,15 @@ export function AppShell({
       {!demo && (
         <MembersPanel
           serverMembers={serverMembers}
+          speakingIds={speakingIds}
           online={(() => {
             const byId = new Map(online.map((u) => [u.user_id, u]));
             if (inCall && voiceSession && userId) {
               const self = byId.get(userId);
               byId.set(userId, {
                 user_id: userId,
-                display_name: self?.display_name || displayName,
-                avatar_url: self?.avatar_url ?? avatarUrl ?? null,
+                display_name: self?.display_name || localName,
+                avatar_url: self?.avatar_url ?? localAvatar ?? null,
                 voice_channel_id: voiceSession.channelId,
                 online_at: self?.online_at ?? new Date().toISOString(),
               });
@@ -526,6 +556,16 @@ export function AppShell({
           })()}
         />
       )}
+
+      {!demo && (
+        <ProfileEditor
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          displayName={localName}
+          avatarUrl={localAvatar}
+          onSaved={handleProfileSaved}
+        />
+      )}
     </div>
   );
 }
@@ -541,6 +581,7 @@ const MemoCallSlot = memo(function MemoCallSlot({
   onDisconnected,
   onLeave,
   onRemoteRoster,
+  onSpeakingChange,
 }: {
   channelId: string;
   callKey: number;
@@ -554,6 +595,7 @@ const MemoCallSlot = memo(function MemoCallSlot({
   onRemoteRoster: (
     peers: { user_id: string; display_name: string }[],
   ) => void;
+  onSpeakingChange: (ids: string[]) => void;
 }) {
   return (
     <CallOverlay
@@ -567,6 +609,7 @@ const MemoCallSlot = memo(function MemoCallSlot({
       onDisconnected={onDisconnected}
       onLeave={onLeave}
       onRemoteRoster={onRemoteRoster}
+      onSpeakingChange={onSpeakingChange}
     />
   );
 });

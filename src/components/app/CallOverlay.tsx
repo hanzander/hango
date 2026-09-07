@@ -28,6 +28,8 @@ import {
   playCameraOffSound,
   playCameraOnSound,
   unlockAudio,
+  playSoundboardClip,
+  SOUNDBOARD_CLIPS,
 } from "@/lib/call-sounds";
 import {
   getCachedDevices,
@@ -48,6 +50,8 @@ type CallOverlayProps = {
   onRemoteRoster?: (
     peers: { user_id: string; display_name: string }[],
   ) => void;
+  /** Identities currently speaking (for member list rings) */
+  onSpeakingChange?: (ids: string[]) => void;
   /** Discord-style mini window while browsing text channels */
   variant?: "full" | "pip";
   /** Link back to the voice channel (PiP header) */
@@ -148,6 +152,7 @@ export function CallOverlay({
   onConnected,
   onDisconnected,
   onRemoteRoster,
+  onSpeakingChange,
   variant = "full",
   returnHref,
 }: CallOverlayProps) {
@@ -167,6 +172,8 @@ export function CallOverlay({
   const [micAllowBusy, setMicAllowBusy] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [room, setRoom] = useState<Room | null>(null);
+  const [speakingIds, setSpeakingIds] = useState<string[]>([]);
+  const [boardOpen, setBoardOpen] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
   const mediaBusyRef = useRef(false);
@@ -177,10 +184,12 @@ export function CallOverlay({
   const onDisconnectedRef = useRef(onDisconnected);
   const onLeaveRef = useRef(onLeave);
   const onRemoteRosterRef = useRef(onRemoteRoster);
+  const onSpeakingChangeRef = useRef(onSpeakingChange);
   onConnectedRef.current = onConnected;
   onDisconnectedRef.current = onDisconnected;
   onLeaveRef.current = onLeave;
   onRemoteRosterRef.current = onRemoteRoster;
+  onSpeakingChangeRef.current = onSpeakingChange;
 
   const schedulePeers = useCallback(() => {
     if (peerTimer.current != null) return;
@@ -282,6 +291,31 @@ export function CallOverlay({
       })
       .on(RoomEvent.MediaDevicesError, (err) => {
         setDeviceHint(friendlyDeviceError(err, "device"));
+      })
+      .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        const ids = speakers.map((s) => s.identity);
+        setSpeakingIds((prev) => {
+          if (
+            prev.length === ids.length &&
+            prev.every((id, i) => id === ids[i])
+          ) {
+            return prev;
+          }
+          return ids;
+        });
+        onSpeakingChangeRef.current?.(ids);
+      })
+      .on(RoomEvent.DataReceived, (payload, participant) => {
+        if (participant?.isLocal) return;
+        try {
+          const text = new TextDecoder().decode(payload);
+          const msg = JSON.parse(text) as { t?: string; id?: string };
+          if (msg.t === "sb" && typeof msg.id === "string") {
+            playSoundboardClip(msg.id);
+          }
+        } catch {
+          /* ignore */
+        }
       })
       .on(RoomEvent.AudioPlaybackStatusChanged, () => {
         setAudioBlocked(!room.canPlaybackAudio);
@@ -514,6 +548,19 @@ export function CallOverlay({
     }
   }
 
+  async function fireSoundboard(id: string) {
+    unlockAudio();
+    playSoundboardClip(id);
+    const r = roomRef.current;
+    if (!r || r.state !== ConnectionState.Connected) return;
+    try {
+      const data = new TextEncoder().encode(JSON.stringify({ t: "sb", id }));
+      await r.localParticipant.publishData(data, { reliable: true });
+    } catch {
+      /* ignore */
+    }
+  }
+
   const live = status === "live";
   const n = Math.max(peers.length, 1);
   const gridClass =
@@ -601,7 +648,12 @@ export function CallOverlay({
 
           <div className="relative min-h-0 flex-1 bg-[#080808]">
             {focus ? (
-              <PeerTile peer={focus} room={room} compact />
+              <PeerTile
+                peer={focus}
+                room={room}
+                compact
+                speaking={speakingIds.includes(focus.identity)}
+              />
             ) : (
               <div className="flex h-full items-center justify-center text-xs text-white/40">
                 {live ? "In call" : "Connecting…"}
@@ -765,7 +817,12 @@ export function CallOverlay({
       <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4 pb-32">
         <div className={cn("grid w-full gap-3", gridClass)}>
           {peers.map((p) => (
-            <PeerTile key={p.identity} peer={p} room={room} />
+            <PeerTile
+              key={p.identity}
+              peer={p}
+              room={room}
+              speaking={speakingIds.includes(p.identity)}
+            />
           ))}
         </div>
       </div>
@@ -817,6 +874,39 @@ export function CallOverlay({
             iconOn={<IconCamera />}
             iconOff={<IconCameraOff />}
           />
+          <div className="relative">
+            <button
+              type="button"
+              title="Soundboard"
+              disabled={!live}
+              onClick={() => setBoardOpen((v) => !v)}
+              className="flex h-12 w-11 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/15 disabled:opacity-50"
+            >
+              <IconSoundboard />
+            </button>
+            {boardOpen && (
+              <div className="absolute bottom-[calc(100%+10px)] left-1/2 z-30 w-56 -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-[#111] shadow-2xl">
+                <p className="border-b border-white/10 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-white/45">
+                  Soundboard
+                </p>
+                <div className="grid grid-cols-2 gap-1 p-2">
+                  {SOUNDBOARD_CLIPS.map((clip) => (
+                    <button
+                      key={clip.id}
+                      type="button"
+                      onClick={() => {
+                        void fireSoundboard(clip.id);
+                        setBoardOpen(false);
+                      }}
+                      className="rounded-lg bg-white/5 px-2 py-2 text-xs text-white/80 hover:bg-white/10 hover:text-white"
+                    >
+                      {clip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={handleLeave}
@@ -836,10 +926,12 @@ const PeerTile = function PeerTile({
   peer,
   room,
   compact,
+  speaking,
 }: {
   peer: PeerSnapshot;
   room: Room | null;
   compact?: boolean;
+  speaking?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -869,10 +961,14 @@ const PeerTile = function PeerTile({
   return (
     <div
       className={cn(
-        "relative overflow-hidden bg-[#0c0c0c]",
+        "relative overflow-hidden bg-[#0c0c0c] transition-[box-shadow] duration-150",
         compact
           ? "h-full w-full"
           : "aspect-video rounded-2xl ring-1 ring-white/5",
+        speaking &&
+          (compact
+            ? "shadow-[inset_0_0_0_3px_rgba(52,211,153,0.95)]"
+            : "ring-2 ring-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]"),
       )}
     >
       {peer.camOn ? (
@@ -890,7 +986,15 @@ const PeerTile = function PeerTile({
             compact ? "gap-1.5" : "gap-3",
           )}
         >
-          <Avatar name={peer.name} size={compact ? "lg" : "xl"} />
+          <div
+            className={cn(
+              "rounded-full transition-[box-shadow] duration-150",
+              speaking &&
+                "shadow-[0_0_0_3px_rgba(52,211,153,0.95),0_0_20px_rgba(52,211,153,0.5)]",
+            )}
+          >
+            <Avatar name={peer.name} size={compact ? "lg" : "xl"} />
+          </div>
         </div>
       )}
       <div
@@ -1489,6 +1593,28 @@ function IconLeave() {
         strokeWidth="1.75"
         strokeLinecap="round"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconSoundboard() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden>
+      <rect
+        x="3"
+        y="5"
+        width="18"
+        height="14"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <path
+        d="M7 12v3M11 9v6M15 11v4M19 10v5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
       />
     </svg>
   );

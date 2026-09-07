@@ -332,6 +332,21 @@ export function ChatWorkspace({
     router.refresh();
   }, [configured, router]);
 
+  const handleProfileSaved = useCallback(
+    (next: { displayName: string; avatarUrl: string | null }) => {
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              display_name: next.displayName,
+              avatar_url: next.avatarUrl,
+            }
+          : prev,
+      );
+    },
+    [],
+  );
+
   if (!bootstrapped) {
     return (
       <div className="flex h-dvh items-center justify-center bg-bg text-sm text-text-muted">
@@ -359,6 +374,7 @@ export function ChatWorkspace({
       demo={demo}
       onSend={handleSend}
       onSignOut={handleSignOut}
+      onProfileSaved={handleProfileSaved}
     />
   );
 }
