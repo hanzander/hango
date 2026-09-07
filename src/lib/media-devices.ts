@@ -31,6 +31,94 @@ async function enumerateKind(kind: Kind): Promise<MediaDeviceInfo[]> {
   return all.filter((d) => d.kind === kind);
 }
 
+export type MicPermission = "granted" | "denied" | "prompt" | "unknown";
+
+export async function queryMicPermission(): Promise<MicPermission> {
+  try {
+    if (!navigator.permissions?.query) return "unknown";
+    const status = await navigator.permissions.query({
+      name: "microphone" as PermissionName,
+    });
+    if (status.state === "granted" || status.state === "denied" || status.state === "prompt") {
+      return status.state;
+    }
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export type MicAccessResult =
+  | { ok: true; devices: MediaDeviceInfo[] }
+  | { ok: false; reason: "denied" | "notfound" | "busy" | "insecure" | "unknown"; message: string };
+
+/**
+ * Must run from a user gesture. Opens the browser mic prompt if needed,
+ * then refreshes the device cache.
+ */
+export async function ensureMicAccess(): Promise<MicAccessResult> {
+  if (typeof window === "undefined") {
+    return { ok: false, reason: "unknown", message: "No window" };
+  }
+  if (!window.isSecureContext) {
+    return {
+      ok: false,
+      reason: "insecure",
+      message: "Microphone needs HTTPS. Open hango on https://…",
+    };
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return {
+      ok: false,
+      reason: "unknown",
+      message: "This browser can’t access the microphone.",
+    };
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+  } catch (err) {
+    const name =
+      err && typeof err === "object" && "name" in err
+        ? String((err as { name: string }).name)
+        : "";
+    if (name === "NotAllowedError" || name === "SecurityError") {
+      return {
+        ok: false,
+        reason: "denied",
+        message:
+          "Microphone is blocked. Click the lock/tune icon in the address bar → Site settings → Microphone → Allow, then try again.",
+      };
+    }
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      return {
+        ok: false,
+        reason: "notfound",
+        message:
+          "No microphone detected. Plug one in, check Windows privacy (Settings → Privacy → Microphone), then try again.",
+      };
+    }
+    if (name === "NotReadableError" || name === "AbortError") {
+      return {
+        ok: false,
+        reason: "busy",
+        message:
+          "Microphone is busy. Close Zoom/Teams/Discord/other browser tabs using it, then try again.",
+      };
+    }
+    return {
+      ok: false,
+      reason: "unknown",
+      message: err instanceof Error ? err.message : "Couldn’t access the microphone.",
+    };
+  }
+
+  const devices = await refreshMediaDevices("audioinput");
+  void refreshMediaDevices("audiooutput");
+  return { ok: true, devices };
+}
+
 /**
  * Refresh devices for a kind. Empty results do not clear an existing cache.
  * Set requestPermission only when you are sure no LiveKit capture is using that device.
