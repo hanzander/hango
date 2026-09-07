@@ -43,18 +43,31 @@ type ChatWorkspaceProps = {
   demo?: boolean;
 };
 
+function asProfile(raw: unknown): Profile | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return (raw[0] as Profile) ?? null;
+  return raw as Profile;
+}
+
 function enrichMessages(
   rows: Message[],
   replyMap: Map<string, Message>,
   reactionsByMsg: Map<string, MessageReaction[]>,
   attachmentsByMsg: Map<string, MessageAttachment[]>,
 ): Message[] {
-  return rows.map((m) => ({
-    ...m,
-    reply_to: m.reply_to_id ? replyMap.get(m.reply_to_id) ?? null : null,
-    reactions: reactionsByMsg.get(m.id) ?? [],
-    attachments: attachmentsByMsg.get(m.id) ?? m.attachments ?? [],
-  }));
+  return rows.map((m) => {
+    const author = asProfile(m.author);
+    const reply = m.reply_to_id ? replyMap.get(m.reply_to_id) ?? null : null;
+    return {
+      ...m,
+      author,
+      reply_to: reply
+        ? { ...reply, author: asProfile(reply.author) }
+        : null,
+      reactions: reactionsByMsg.get(m.id) ?? [],
+      attachments: attachmentsByMsg.get(m.id) ?? m.attachments ?? [],
+    };
+  });
 }
 
 export function ChatWorkspace({
@@ -457,8 +470,10 @@ export function ChatWorkspace({
               ...prev,
               {
                 ...row,
-                author: (author as Profile) ?? null,
-                reply_to,
+                author: asProfile(author) ?? null,
+                reply_to: reply_to
+                  ? { ...reply_to, author: asProfile(reply_to.author) }
+                  : null,
                 reactions: [],
               },
             ];
@@ -839,7 +854,7 @@ export function ChatWorkspace({
           ...prev,
           {
             ...sent,
-            author: sent.author ?? profile,
+            author: asProfile(sent.author) ?? profile,
             reply_to,
             reactions: [],
             attachments,
@@ -1257,6 +1272,26 @@ export function ChatWorkspace({
 
   const handleProfileSaved = useCallback((next: Profile) => {
     setProfile((prev) => (prev ? { ...prev, ...next } : next));
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.author_id === next.id
+          ? {
+              ...m,
+              author: {
+                id: next.id,
+                display_name: next.display_name,
+                avatar_url: next.avatar_url,
+                status: next.status,
+                custom_status: next.custom_status,
+                bio: next.bio,
+                username: next.username,
+                ...(m.author ?? {}),
+                ...next,
+              },
+            }
+          : m,
+      ),
+    );
   }, []);
 
   const handleMarkServerRead = useCallback(async () => {

@@ -39,7 +39,9 @@ type Row = {
   display_name: string;
   avatar_url: string | null;
   inVoice: boolean;
-  status: "online" | "offline";
+  online: boolean;
+  status: "online" | "idle" | "dnd" | "invisible" | "offline";
+  custom_status?: string | null;
   roleIds: string[];
 };
 
@@ -73,12 +75,21 @@ export function MembersPanel({
     const presenceById = new Map(online.map((m) => [m.user_id, m]));
     const list: Row[] = serverMembers.map((m) => {
       const p = presenceById.get(m.id);
+      const presenceStatus = p?.status;
       return {
         user_id: m.id,
         display_name: p?.display_name || m.display_name,
         avatar_url: p?.avatar_url ?? m.avatar_url,
         inVoice: Boolean(p?.voice_channel_id),
-        status: p ? "online" : "offline",
+        online: Boolean(p),
+        status: p
+          ? presenceStatus === "idle" ||
+            presenceStatus === "dnd" ||
+            presenceStatus === "online"
+            ? presenceStatus
+            : "online"
+          : "offline",
+        custom_status: p?.custom_status ?? m.custom_status,
         roleIds: memberRoleIds[m.id] ?? [],
       };
     });
@@ -90,13 +101,18 @@ export function MembersPanel({
         display_name: p.display_name,
         avatar_url: p.avatar_url,
         inVoice: Boolean(p.voice_channel_id),
-        status: "online",
+        online: true,
+        status:
+          p.status === "idle" || p.status === "dnd" || p.status === "online"
+            ? p.status
+            : "online",
+        custom_status: p.custom_status,
         roleIds: memberRoleIds[p.user_id] ?? [],
       });
     }
 
     list.sort((a, b) => {
-      if (a.status !== b.status) return a.status === "online" ? -1 : 1;
+      if (a.online !== b.online) return a.online ? -1 : 1;
       if (a.inVoice !== b.inVoice) return a.inVoice ? -1 : 1;
       return a.display_name.localeCompare(b.display_name, undefined, {
         sensitivity: "base",
@@ -105,8 +121,8 @@ export function MembersPanel({
     return list;
   }, [serverMembers, online, memberRoleIds]);
 
-  const onlineRows = rows.filter((r) => r.status === "online");
-  const offline = rows.filter((r) => r.status === "offline");
+  const onlineRows = rows.filter((r) => r.online);
+  const offline = rows.filter((r) => !r.online);
 
   function topRole(m: Row): ServerRole | null {
     let best: ServerRole | null = null;
@@ -238,7 +254,15 @@ function MemberRow({
   onOpen?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
-  const dim = member.status === "offline";
+  const dim = !member.online;
+  const dot =
+    member.status === "idle"
+      ? "bg-amber-400"
+      : member.status === "dnd"
+        ? "bg-red-500"
+        : member.online
+          ? "bg-emerald-500/90"
+          : "bg-text-muted";
   return (
     <li
       className="hango-anim-fade-up"
@@ -270,7 +294,7 @@ function MemberRow({
           <span
             className={cn(
               "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-sidebar",
-              member.status === "online" ? "bg-emerald-500/90" : "bg-text-muted",
+              dot,
             )}
           />
         </div>
@@ -287,6 +311,10 @@ function MemberRow({
             <p className="flex items-center gap-1 truncate text-[10px] text-emerald-400/80">
               <VoiceGlyph />
               Voice
+            </p>
+          ) : member.custom_status ? (
+            <p className="truncate text-[10px] text-text-muted">
+              {member.custom_status}
             </p>
           ) : role ? (
             <p className="truncate text-[10px] text-text-muted opacity-0 transition group-hover:opacity-100">

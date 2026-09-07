@@ -472,8 +472,37 @@ export function AppShell({
     void loadMembers();
     void loadRoles();
     void loadMemberRoles();
+
+    const profilesChannel = supabase
+      .channel(`server-profiles:${server.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles" },
+        (payload) => {
+          const row = payload.new as Profile;
+          if (!row?.id) return;
+          setServerMembers((prev) => {
+            if (!prev.some((m) => m.id === row.id)) return prev;
+            return prev.map((m) =>
+              m.id === row.id
+                ? {
+                    ...m,
+                    display_name: row.display_name ?? m.display_name,
+                    avatar_url: row.avatar_url ?? m.avatar_url,
+                    status: row.status ?? m.status,
+                    custom_status: row.custom_status ?? m.custom_status,
+                    bio: row.bio ?? m.bio,
+                  }
+                : m,
+            );
+          });
+        },
+      )
+      .subscribe();
+
     return () => {
       cancelled = true;
+      void supabase.removeChannel(profilesChannel);
     };
   }, [demo, server.id]);
 
@@ -512,6 +541,8 @@ export function AppShell({
     displayName: localName,
     avatarUrl: localAvatar,
     voiceChannelId,
+    status: localStatus,
+    customStatus: localCustomStatus,
     enabled: !demo && Boolean(userId),
   });
 
@@ -775,6 +806,7 @@ export function AppShell({
             <>
               <MessagePane
                 channelName={channel.name}
+                channelId={channel.id}
                 channelTopic={channel.topic}
                 messages={messages}
                 loading={loadingMessages}

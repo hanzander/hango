@@ -17,6 +17,7 @@ import { Lightbox } from "./Lightbox";
 
 type MessagePaneProps = {
   channelName: string;
+  channelId?: string;
   channelTopic?: string | null;
   messages: Message[];
   loading?: boolean;
@@ -36,11 +37,12 @@ type MessagePaneProps = {
   onStartThread?: (message: Message) => void;
 };
 
-const NEAR_BOTTOM_PX = 120;
+const NEAR_BOTTOM_PX = 160;
 const QUICK_EMOJIS = ["👍", "😂", "❤️", "🔥", "😮", "😢"];
 
 export function MessagePane({
   channelName,
+  channelId,
   channelTopic,
   messages,
   loading,
@@ -62,7 +64,8 @@ export function MessagePane({
   const scrollerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
-  const prevChannel = useRef(channelName);
+  const ignoreScrollUntil = useRef(0);
+  const prevChannelId = useRef(channelId);
   const prevLen = useRef(0);
   const [showJump, setShowJump] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -76,9 +79,19 @@ export function MessagePane({
   }
 
   function scrollToBottom(behavior: ScrollBehavior = "auto") {
-    bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+    const el = scrollerRef.current;
+    ignoreScrollUntil.current = Date.now() + 120;
     stickToBottom.current = true;
     setShowJump(false);
+    if (el) {
+      if (behavior === "smooth") {
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+    }
   }
 
   useEffect(() => {
@@ -86,6 +99,7 @@ export function MessagePane({
     if (!el) return;
     function onScroll() {
       if (!scrollerRef.current) return;
+      if (Date.now() < ignoreScrollUntil.current) return;
       const near = isNearBottom(scrollerRef.current);
       stickToBottom.current = near;
       setShowJump(!near);
@@ -94,28 +108,47 @@ export function MessagePane({
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
+  // New channel → always pin to latest
   useLayoutEffect(() => {
-    if (loading) return;
-    if (prevChannel.current !== channelName) {
-      prevChannel.current = channelName;
+    if (prevChannelId.current !== channelId) {
+      prevChannelId.current = channelId;
       stickToBottom.current = true;
       prevLen.current = 0;
       setShowJump(false);
     }
-  }, [channelName, loading]);
+  }, [channelId]);
 
+  // After load / new messages / images: stay at bottom when pinned
   useLayoutEffect(() => {
     if (loading) return;
     const grew = messages.length > prevLen.current;
-    const channelJustOpened = prevLen.current === 0 && messages.length > 0;
+    const opened = prevLen.current === 0 && messages.length > 0;
     prevLen.current = messages.length;
-    if (!grew && !channelJustOpened) return;
-    if (!stickToBottom.current && !channelJustOpened) {
-      setShowJump(true);
+
+    if (opened || stickToBottom.current) {
+      scrollToBottom(opened || !grew ? "auto" : "smooth");
+      // Images/embeds can grow height after paint — nudge again
+      requestAnimationFrame(() => {
+        if (stickToBottom.current) scrollToBottom("auto");
+      });
+      window.setTimeout(() => {
+        if (stickToBottom.current) scrollToBottom("auto");
+      }, 80);
       return;
     }
-    scrollToBottom(channelJustOpened || messages.length <= 1 ? "auto" : "smooth");
-  }, [messages, loading, channelName]);
+    if (grew) setShowJump(true);
+  }, [messages, loading, channelId, searchQuery, pinsOnly]);
+
+  // Keep pinned when the scroller content resizes (image loads, etc.)
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (stickToBottom.current) scrollToBottom("auto");
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const visible = useMemo(() => {
     let list = messages.filter((m) => !m.deleted_at);
@@ -133,7 +166,7 @@ export function MessagePane({
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-chat">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/80 bg-chat/80 px-4 backdrop-blur-sm">
         {onSearchChange && searchQuery !== undefined && searchQuery.length > 0 ? (
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <svg
@@ -215,7 +248,7 @@ export function MessagePane({
             </p>
           </div>
         ) : (
-          <ul className={cn(compact ? "space-y-1" : "space-y-4")}>
+          <ul className={cn(compact ? "space-y-0.5" : "space-y-3")}>
             {visible.map((message, i) => {
               const prev = visible[i - 1];
               const grouped =
@@ -361,18 +394,26 @@ function MessageRow({
   return (
     <li
       className={cn(
-        "hango-msg group relative flex gap-3 rounded-lg px-1 transition-colors duration-150 hover:bg-white/[0.03]",
-        grouped && !compact && "mt-0",
+        "hango-msg group relative flex gap-3 rounded-xl px-2 py-1 transition-colors duration-150 hover:bg-white/[0.035]",
+        grouped && !compact && "-mt-0.5",
         compact && "py-0.5",
-        message.pinned_at && "bg-amber-500/[0.04]",
+        message.pinned_at && "bg-amber-500/[0.05]",
       )}
     >
-      {!grouped && !compact ? (
-        <button type="button" onClick={onOpenProfile} className="shrink-0 pt-0.5">
-          <Avatar name={name} src={message.author?.avatar_url} />
+      {!grouped ? (
+        <button
+          type="button"
+          onClick={onOpenProfile}
+          className="shrink-0 pt-0.5 transition hover:opacity-90"
+        >
+          <Avatar
+            name={name}
+            src={message.author?.avatar_url}
+            size={compact ? "sm" : "md"}
+          />
         </button>
       ) : (
-        <div className="w-10 shrink-0" />
+        <div className={cn("shrink-0", compact ? "w-8" : "w-10")} />
       )}
       <div className="min-w-0 flex-1">
         {message.reply_to && (
@@ -390,16 +431,16 @@ function MessageRow({
             </span>
           </button>
         )}
-        {(!grouped || compact) && (
-          <div className="flex items-baseline gap-2">
+        {!grouped && (
+          <div className="mb-0.5 flex items-baseline gap-2">
             <button
               type="button"
               onClick={onOpenProfile}
-              className="text-sm font-medium text-text hover:underline"
+              className="text-[15px] font-semibold text-text hover:underline"
             >
               {name}
             </button>
-            <time className="text-xs text-text-muted">
+            <time className="text-[11px] text-text-muted">
               {formatMessageTime(message.created_at)}
             </time>
             {message.edited_at && (
@@ -448,7 +489,7 @@ function MessageRow({
           message.content && (
             <p
               className={cn(
-                "whitespace-pre-wrap break-words text-sm leading-relaxed text-text-secondary",
+                "whitespace-pre-wrap break-words text-[15px] leading-relaxed text-zinc-200",
                 !grouped && "mt-0.5",
               )}
             >

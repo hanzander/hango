@@ -1,4 +1,5 @@
 import { cn, initials } from "@/lib/utils";
+import { useState } from "react";
 
 type AvatarProps = {
   name: string;
@@ -9,20 +10,24 @@ type AvatarProps = {
 
 const sizes = {
   sm: "h-8 w-8 text-[10px]",
-  md: "h-9 w-9 text-xs",
+  md: "h-10 w-10 text-xs",
   lg: "h-10 w-10 text-sm",
   xl: "h-20 w-20 text-xl",
 };
 
 export function Avatar({ name, src, size = "md", className }: AvatarProps) {
-  if (src) {
+  const [failed, setFailed] = useState(false);
+  const showImg = Boolean(src) && !failed;
+
+  if (showImg) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={src}
+        src={src!}
         alt=""
+        onError={() => setFailed(true)}
         className={cn(
-          "shrink-0 rounded-full object-cover ring-1 ring-border-strong",
+          "shrink-0 rounded-full object-cover ring-1 ring-white/10",
           sizes[size],
           className,
         )}
@@ -33,7 +38,7 @@ export function Avatar({ name, src, size = "md", className }: AvatarProps) {
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-bg-subtle text-text-secondary ring-1 ring-border-strong",
+        "flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-zinc-700 to-zinc-800 text-zinc-200 ring-1 ring-white/10",
         sizes[size],
         className,
       )}

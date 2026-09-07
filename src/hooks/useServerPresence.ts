@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
+import type { UserStatus } from "@/lib/types";
 
 export type PresenceUser = {
   user_id: string;
@@ -15,6 +16,8 @@ export type PresenceUser = {
   avatar_url: string | null;
   voice_channel_id: string | null;
   online_at: string;
+  status?: UserStatus;
+  custom_status?: string | null;
 };
 
 type UseServerPresenceArgs = {
@@ -23,6 +26,8 @@ type UseServerPresenceArgs = {
   displayName: string;
   avatarUrl?: string | null;
   voiceChannelId?: string | null;
+  status?: UserStatus;
+  customStatus?: string | null;
   enabled?: boolean;
 };
 
@@ -35,7 +40,9 @@ function membersEqual(a: PresenceUser[], b: PresenceUser[]) {
       x.user_id !== y.user_id ||
       x.display_name !== y.display_name ||
       x.avatar_url !== y.avatar_url ||
-      x.voice_channel_id !== y.voice_channel_id
+      x.voice_channel_id !== y.voice_channel_id ||
+      x.status !== y.status ||
+      x.custom_status !== y.custom_status
     ) {
       return false;
     }
@@ -64,8 +71,7 @@ function readPresence(
 }
 
 /**
- * Presence for online + in-voice. Voice channel changes flush immediately
- * so Lounge occupants show up on the left/right without waiting.
+ * Presence for online + in-voice + status. Voice/status changes flush immediately.
  */
 export function useServerPresence({
   serverId,
@@ -73,6 +79,8 @@ export function useServerPresence({
   displayName,
   avatarUrl = null,
   voiceChannelId = null,
+  status = "online",
+  customStatus = null,
   enabled = true,
 }: UseServerPresenceArgs) {
   const [members, setMembers] = useState<PresenceUser[]>([]);
@@ -86,8 +94,17 @@ export function useServerPresence({
     displayName,
     avatarUrl,
     voiceChannelId,
+    status,
+    customStatus,
   });
-  payloadRef.current = { userId, displayName, avatarUrl, voiceChannelId };
+  payloadRef.current = {
+    userId,
+    displayName,
+    avatarUrl,
+    voiceChannelId,
+    status,
+    customStatus,
+  };
 
   const applyPresence = useCallback(
     (channel: NonNullable<typeof channelRef.current>) => {
@@ -107,6 +124,8 @@ export function useServerPresence({
       avatar_url: p.avatarUrl,
       voice_channel_id: p.voiceChannelId,
       online_at: new Date().toISOString(),
+      status: p.status === "invisible" ? "online" : p.status,
+      custom_status: p.customStatus,
     } satisfies PresenceUser);
   }, []);
 
@@ -120,13 +139,12 @@ export function useServerPresence({
     channelRef.current = channel;
     subscribedRef.current = false;
 
-    // sync + join/leave so voice occupants update as people enter Lounge
     channel.on("presence", { event: "sync" }, () => applyPresence(channel));
     channel.on("presence", { event: "join" }, () => applyPresence(channel));
     channel.on("presence", { event: "leave" }, () => applyPresence(channel));
 
-    void channel.subscribe(async (status) => {
-      if (status !== "SUBSCRIBED") return;
+    void channel.subscribe(async (subStatus) => {
+      if (subStatus !== "SUBSCRIBED") return;
       subscribedRef.current = true;
       await trackNow();
       applyPresence(channel);
@@ -140,10 +158,16 @@ export function useServerPresence({
     };
   }, [enabled, serverId, userId, applyPresence, trackNow]);
 
-  // Re-track when voice channel / profile fields change (critical for Lounge list)
   useEffect(() => {
     void trackNow();
-  }, [trackNow, displayName, avatarUrl, voiceChannelId]);
+  }, [
+    trackNow,
+    displayName,
+    avatarUrl,
+    voiceChannelId,
+    status,
+    customStatus,
+  ]);
 
   const online = useMemo(() => members, [members]);
 
