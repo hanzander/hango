@@ -284,7 +284,7 @@ export function ChatWorkspace({
       setLoadingMessages(true);
       const { data, error } = await supabase
         .from("messages")
-        .select("*, author:profiles(*)")
+        .select("*, author:profiles!author_id(*)")
         .eq("channel_id", channelId)
         .order("created_at", { ascending: true })
         .limit(200);
@@ -310,7 +310,7 @@ export function ChatWorkspace({
       if (replyIds.length) {
         const { data: replies } = await supabase
           .from("messages")
-          .select("*, author:profiles(*)")
+          .select("*, author:profiles!author_id(*)")
           .in("id", replyIds);
         for (const r of (replies as Message[]) ?? []) {
           replyMap.set(r.id, r);
@@ -363,7 +363,7 @@ export function ChatWorkspace({
           if (row.reply_to_id) {
             const { data: parent } = await supabase
               .from("messages")
-              .select("*, author:profiles(*)")
+              .select("*, author:profiles!author_id(*)")
               .eq("id", row.reply_to_id)
               .maybeSingle();
             reply_to = (parent as Message) ?? null;
@@ -585,7 +585,7 @@ export function ChatWorkspace({
       const { data, error } = await supabase
         .from("messages")
         .insert(payload)
-        .select("*, author:profiles(*)")
+        .select("*, author:profiles!author_id(*)")
         .single();
 
       if (error) {
