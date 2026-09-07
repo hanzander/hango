@@ -31,7 +31,6 @@ import {
   unlockAudio,
   playSoundboardClip,
   SOUNDBOARD_CLIPS,
-  soundboardReady,
   SOUNDBOARD_COOLDOWN_MS,
 } from "@/lib/call-sounds";
 import {
