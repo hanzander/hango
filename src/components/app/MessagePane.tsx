@@ -26,6 +26,7 @@ type MessagePaneProps = {
   typingNames?: string[];
   searchQuery?: string;
   pinsOnly?: boolean;
+  onSearchChange?: (q: string) => void;
   onEdit?: (messageId: string, content: string) => Promise<void> | void;
   onDelete?: (messageId: string) => Promise<void> | void;
   onReply?: (message: Message) => void;
@@ -49,6 +50,7 @@ export function MessagePane({
   typingNames = [],
   searchQuery = "",
   pinsOnly = false,
+  onSearchChange,
   onEdit,
   onDelete,
   onReply,
@@ -131,21 +133,63 @@ export function MessagePane({
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-chat">
-      <header className="flex h-12 shrink-0 flex-col justify-center border-b border-border px-4">
-        <div className="flex items-center gap-2">
-          <span className="text-text-muted">#</span>
-          <h1 className="text-sm font-semibold tracking-tight text-text">
-            {channelName}
-          </h1>
-        </div>
-        {channelTopic && (
-          <p className="truncate text-[11px] text-text-muted">{channelTopic}</p>
-        )}
-        {(searchQuery || pinsOnly) && (
-          <p className="truncate text-[11px] text-amber-300/90">
-            {pinsOnly ? "Pinned messages" : `Search: “${searchQuery}”`} ·{" "}
-            {visible.length} result{visible.length === 1 ? "" : "s"}
-          </p>
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+        {onSearchChange && searchQuery !== undefined && searchQuery.length > 0 ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-3.5 w-3.5 shrink-0 text-text-muted"
+              fill="none"
+              aria-hidden
+            >
+              <circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="2" />
+              <path
+                d="m16 16 3 3"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+            <input
+              value={searchQuery.trim() === "" ? "" : searchQuery}
+              onChange={(e) => onSearchChange(e.target.value || " ")}
+              placeholder="Search this channel…"
+              className="min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
+              autoFocus
+            />
+            <span className="shrink-0 text-[11px] text-text-muted">
+              {visible.length} result{visible.length === 1 ? "" : "s"}
+            </span>
+            <button
+              type="button"
+              title="Close search"
+              onClick={() => onSearchChange("")}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-text-muted transition hover:bg-bg-hover hover:text-text"
+            >
+              ×
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-text-muted">#</span>
+                <h1 className="truncate text-sm font-semibold tracking-tight text-text">
+                  {channelName}
+                </h1>
+                {pinsOnly && (
+                  <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                    Pins
+                  </span>
+                )}
+              </div>
+              {channelTopic && !pinsOnly && (
+                <p className="truncate text-[11px] text-text-muted">
+                  {channelTopic}
+                </p>
+              )}
+            </div>
+          </>
         )}
       </header>
 
