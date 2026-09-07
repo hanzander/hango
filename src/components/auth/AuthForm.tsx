@@ -32,6 +32,40 @@ async function routeAfterAuth(
     : "/app";
 }
 
+function PasswordField({
+  value,
+  onChange,
+  autoComplete,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: string;
+}) {
+  const [show, setShow] = useState(false);
+
+  return (
+    <div className="relative">
+      <input
+        type={show ? "text" : "password"}
+        required
+        minLength={6}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-border-strong bg-bg-elevated px-3 py-2.5 pr-16 text-sm text-text outline-none placeholder:text-text-muted focus:border-text-muted"
+        placeholder="••••••••"
+        autoComplete={autoComplete}
+      />
+      <button
+        type="button"
+        onClick={() => setShow((v) => !v)}
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs text-text-muted transition-colors hover:text-text"
+      >
+        {show ? "Hide" : "Show"}
+      </button>
+    </div>
+  );
+}
+
 export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -52,13 +86,15 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
       return;
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+
     setLoading(true);
     try {
       const supabase = createClient();
 
       if (mode === "signup") {
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password,
         });
         if (signUpError) throw signUpError;
@@ -75,10 +111,23 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
       }
 
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+        email: cleanEmail,
         password,
       });
-      if (signInError) throw signInError;
+      if (signInError) {
+        const msg = signInError.message.toLowerCase();
+        if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
+          throw new Error(
+            "Wrong email or password. If you just signed up, confirm your email first (check inbox/spam).",
+          );
+        }
+        if (msg.includes("email not confirmed")) {
+          throw new Error(
+            "Confirm your email before signing in. Check your inbox or spam folder.",
+          );
+        }
+        throw signInError;
+      }
 
       const dest = await routeAfterAuth(supabase, nextPath);
       router.push(dest);
@@ -106,15 +155,20 @@ export function AuthForm({ mode, nextPath = "/app" }: AuthFormProps) {
       </label>
 
       <label className="block space-y-1.5">
-        <span className="text-xs text-text-secondary">Password</span>
-        <input
-          type="password"
-          required
-          minLength={6}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-text-secondary">Password</span>
+          {mode === "login" && (
+            <Link
+              href="/forgot-password"
+              className="text-[11px] text-text-muted transition-colors hover:text-text"
+            >
+              Forgot password?
+            </Link>
+          )}
+        </div>
+        <PasswordField
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-border-strong bg-bg-elevated px-3 py-2.5 text-sm text-text outline-none placeholder:text-text-muted focus:border-text-muted"
-          placeholder="••••••••"
+          onChange={setPassword}
           autoComplete={mode === "login" ? "current-password" : "new-password"}
         />
       </label>

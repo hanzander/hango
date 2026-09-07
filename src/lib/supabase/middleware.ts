@@ -35,7 +35,11 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isDemo = path === "/app/demo" || path.startsWith("/app/demo/");
   const isApp = path.startsWith("/app") && !isDemo;
-  const isAuth = path === "/login" || path === "/signup";
+  const isAuth =
+    path === "/login" ||
+    path === "/signup" ||
+    path === "/forgot-password";
+  const isResetPassword = path === "/reset-password";
   const isOnboarding = path === "/onboarding";
 
   if ((isApp || isOnboarding) && !user) {
@@ -45,7 +49,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && (isApp || isOnboarding || isAuth)) {
+  if (user && (isApp || isOnboarding || isAuth) && !isResetPassword) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("onboarding_complete")
