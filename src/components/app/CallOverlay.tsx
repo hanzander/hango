@@ -66,6 +66,7 @@ type PeerSnapshot = {
   isLocal: boolean;
   micOn: boolean;
   camOn: boolean;
+  screenOn: boolean;
 };
 
 const MIC_OPTS = {
@@ -109,6 +110,7 @@ function localPlaceholder(displayName: string): PeerSnapshot {
     isLocal: true,
     micOn: false,
     camOn: false,
+    screenOn: false,
   };
 }
 
@@ -123,6 +125,7 @@ function snapshotPeers(room: Room): PeerSnapshot[] {
     isLocal: p.isLocal,
     micOn: p.isMicrophoneEnabled,
     camOn: p.isCameraEnabled,
+    screenOn: p.isScreenShareEnabled,
   }));
 }
 
@@ -135,7 +138,8 @@ function peersEqual(a: PeerSnapshot[], b: PeerSnapshot[]) {
       x.identity !== y.identity ||
       x.name !== y.name ||
       x.micOn !== y.micOn ||
-      x.camOn !== y.camOn
+      x.camOn !== y.camOn ||
+      x.screenOn !== y.screenOn
     ) {
       return false;
     }
@@ -167,6 +171,7 @@ export function CallOverlay({
   ]);
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
+  const [screenOn, setScreenOn] = useState(false);
   const [deafened, setDeafened] = useState(false);
   const [pttMode, setPttMode] = useState(false);
   const [pttHeld, setPttHeld] = useState(false);
@@ -214,8 +219,10 @@ export function CallOverlay({
       setPeers((prev) => (peersEqual(prev, next) ? prev : next));
       const mic = room.localParticipant.isMicrophoneEnabled;
       const cam = room.localParticipant.isCameraEnabled;
+      const screen = room.localParticipant.isScreenShareEnabled;
       setMicOn((prev) => (prev === mic ? prev : mic));
       setCamOn((prev) => (prev === cam ? prev : cam));
+      setScreenOn((prev) => (prev === screen ? prev : screen));
       onRemoteRosterRef.current?.(
         next
           .filter((p) => !p.isLocal)
@@ -593,6 +600,25 @@ export function CallOverlay({
           setCamOn(!next);
           setDeviceHint(friendlyDeviceError(err2, "camera"));
         }
+      }
+    });
+  }
+
+  async function toggleScreen() {
+    await withMediaLock(async () => {
+      const r = roomRef.current!;
+      const next = !r.localParticipant.isScreenShareEnabled;
+      setDeviceHint(null);
+      try {
+        await r.localParticipant.setScreenShareEnabled(next);
+        setScreenOn(next);
+      } catch (err) {
+        setScreenOn(false);
+        setDeviceHint(
+          err instanceof Error
+            ? err.message
+            : "Screen share failed — check browser permission",
+        );
       }
     });
   }
@@ -1044,6 +1070,20 @@ export function CallOverlay({
             iconOn={<IconCamera />}
             iconOff={<IconCameraOff />}
           />
+          <button
+            type="button"
+            title={screenOn ? "Stop sharing" : "Share screen"}
+            disabled={!room || mediaBusy}
+            onClick={() => void toggleScreen()}
+            className={cn(
+              "flex h-12 items-center rounded-full px-3 text-[11px] font-medium transition-colors disabled:opacity-50",
+              screenOn
+                ? "bg-emerald-500 text-black"
+                : "bg-white/10 text-white hover:bg-white/15",
+            )}
+          >
+            Screen
+          </button>
           <div className="relative">
             <button
               type="button"
@@ -1116,7 +1156,7 @@ const PeerTile = function PeerTile({
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || !room || !peer.camOn) {
+    if (!el || !room || (!peer.camOn && !peer.screenOn)) {
       if (el) el.srcObject = null;
       return;
     }
@@ -1126,16 +1166,24 @@ const PeerTile = function PeerTile({
       : room.remoteParticipants.get(peer.identity);
     if (!participant) return;
 
-    const camPub = Array.from(participant.trackPublications.values()).find(
+    const pubs = Array.from(participant.trackPublications.values());
+    const screenPub = pubs.find(
+      (pub) =>
+        pub.source === Track.Source.ScreenShare && pub.track && !pub.isMuted,
+    );
+    const camPub = pubs.find(
       (pub) => pub.source === Track.Source.Camera && pub.track && !pub.isMuted,
     );
-    if (!camPub?.track) return;
+    const usePub = screenPub || camPub;
+    if (!usePub?.track) return;
 
-    camPub.track.attach(el);
+    usePub.track.attach(el);
     return () => {
-      camPub.track?.detach(el);
+      usePub.track?.detach(el);
     };
-  }, [peer.camOn, peer.identity, peer.isLocal, room]);
+  }, [peer.camOn, peer.screenOn, peer.identity, peer.isLocal, room]);
+
+  const showVideo = peer.camOn || peer.screenOn;
 
   return (
     <div
@@ -1150,10 +1198,10 @@ const PeerTile = function PeerTile({
             : "ring-2 ring-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]"),
       )}
     >
-      {peer.camOn ? (
+      {showVideo ? (
         <video
           ref={videoRef}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain bg-black"
           muted={peer.isLocal}
           playsInline
           autoPlay
@@ -1195,6 +1243,11 @@ const PeerTile = function PeerTile({
           {!peer.micOn && (
             <span className="rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-red-300">
               muted
+            </span>
+          )}
+          {peer.screenOn && (
+            <span className="rounded bg-emerald-500/80 px-1.5 py-0.5 text-[10px] text-black">
+              screen
             </span>
           )}
         </div>

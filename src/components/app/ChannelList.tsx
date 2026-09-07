@@ -22,6 +22,7 @@ type ChannelListProps = {
   onMuteChannel?: (channelId: string, mute: boolean) => void;
   onMuteServer?: (mute: boolean) => void;
   onCopyInvite?: () => void;
+  onOpenRoles?: () => void;
 };
 
 export function ChannelList({
@@ -39,6 +40,7 @@ export function ChannelList({
   onMuteChannel,
   onMuteServer,
   onCopyInvite,
+  onOpenRoles,
 }: ChannelListProps) {
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState<{
@@ -82,16 +84,28 @@ export function ChannelList({
             ← Leave server
           </Link>
         </div>
-        {onMuteServer && (
-          <button
-            type="button"
-            title={serverMuted ? "Unmute server" : "Mute server"}
-            onClick={() => onMuteServer(!serverMuted)}
-            className="rounded-md px-2 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
-          >
-            {serverMuted ? "Unmute" : "Mute"}
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {onMuteServer && (
+            <button
+              type="button"
+              title={serverMuted ? "Unmute server" : "Mute server"}
+              onClick={() => onMuteServer(!serverMuted)}
+              className="rounded-md px-2 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+            >
+              {serverMuted ? "Unmute" : "Mute"}
+            </button>
+          )}
+          {onOpenRoles && (
+            <button
+              type="button"
+              title="Roles"
+              onClick={onOpenRoles}
+              className="rounded-md px-2 py-1 text-[10px] text-text-muted hover:bg-bg-hover hover:text-text"
+            >
+              Roles
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="hango-scroll flex-1 overflow-y-auto px-2 py-3">

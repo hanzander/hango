@@ -8,10 +8,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Message } from "@/lib/types";
+import type { Message, MessageAttachment, MessageEmbed } from "@/lib/types";
 import { formatMessageTime, cn } from "@/lib/utils";
 import { parseDiscordMarkdown } from "@/lib/markdown";
 import { Avatar } from "@/components/ui/Avatar";
+import { LinkEmbedCard, extractUrls, useFetchEmbed } from "@/lib/embeds";
+import { Lightbox } from "./Lightbox";
 
 type MessagePaneProps = {
   channelName: string;
@@ -21,11 +23,15 @@ type MessagePaneProps = {
   currentUserId?: string;
   compact?: boolean;
   typingNames?: string[];
+  searchQuery?: string;
+  pinsOnly?: boolean;
   onEdit?: (messageId: string, content: string) => Promise<void> | void;
   onDelete?: (messageId: string) => Promise<void> | void;
   onReply?: (message: Message) => void;
   onReact?: (messageId: string, emoji: string) => Promise<void> | void;
+  onPin?: (messageId: string, pin: boolean) => Promise<void> | void;
   onOpenProfile?: (userId: string) => void;
+  onStartThread?: (message: Message) => void;
 };
 
 const NEAR_BOTTOM_PX = 120;
@@ -39,11 +45,15 @@ export function MessagePane({
   currentUserId,
   compact,
   typingNames = [],
+  searchQuery = "",
+  pinsOnly = false,
   onEdit,
   onDelete,
   onReply,
   onReact,
+  onPin,
   onOpenProfile,
+  onStartThread,
 }: MessagePaneProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -53,6 +63,9 @@ export function MessagePane({
   const [showJump, setShowJump] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
+    null,
+  );
 
   function isNearBottom(el: HTMLDivElement) {
     return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
@@ -100,10 +113,19 @@ export function MessagePane({
     scrollToBottom(channelJustOpened || messages.length <= 1 ? "auto" : "smooth");
   }, [messages, loading, channelName]);
 
-  const visible = useMemo(
-    () => messages.filter((m) => !m.deleted_at),
-    [messages],
-  );
+  const visible = useMemo(() => {
+    let list = messages.filter((m) => !m.deleted_at);
+    if (pinsOnly) list = list.filter((m) => m.pinned_at);
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(
+        (m) =>
+          m.content.toLowerCase().includes(q) ||
+          m.author?.display_name?.toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [messages, pinsOnly, searchQuery]);
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-chat">
@@ -116,6 +138,12 @@ export function MessagePane({
         </div>
         {channelTopic && (
           <p className="truncate text-[11px] text-text-muted">{channelTopic}</p>
+        )}
+        {(searchQuery || pinsOnly) && (
+          <p className="truncate text-[11px] text-amber-300/90">
+            {pinsOnly ? "Pinned messages" : `Search: “${searchQuery}”`} ·{" "}
+            {visible.length} result{visible.length === 1 ? "" : "s"}
+          </p>
         )}
       </header>
 
@@ -174,6 +202,11 @@ export function MessagePane({
                   onDelete={() => onDelete?.(message.id)}
                   onReply={() => onReply?.(message)}
                   onReact={(emoji) => onReact?.(message.id, emoji)}
+                  onPin={() => onPin?.(message.id, !message.pinned_at)}
+                  onStartThread={() => onStartThread?.(message)}
+                  onOpenAttachment={(a) =>
+                    setLightbox({ src: a.url, alt: a.filename })
+                  }
                   onOpenProfile={() =>
                     onOpenProfile?.(message.author_id)
                   }
@@ -200,6 +233,12 @@ export function MessagePane({
           {formatTyping(typingNames)}
         </p>
       )}
+
+      <Lightbox
+        src={lightbox?.src ?? null}
+        alt={lightbox?.alt}
+        onClose={() => setLightbox(null)}
+      />
     </div>
   );
 }
@@ -225,6 +264,9 @@ function MessageRow({
   onDelete,
   onReply,
   onReact,
+  onPin,
+  onStartThread,
+  onOpenAttachment,
   onOpenProfile,
 }: {
   message: Message;
@@ -241,6 +283,9 @@ function MessageRow({
   onDelete: () => void;
   onReply: () => void;
   onReact: (emoji: string) => void;
+  onPin?: () => void;
+  onStartThread?: () => void;
+  onOpenAttachment: (a: MessageAttachment) => void;
   onOpenProfile: () => void;
 }) {
   const name = message.author?.display_name ?? "Unknown";
@@ -255,12 +300,22 @@ function MessageRow({
     return map;
   }, [message.reactions, currentUserId]);
 
+  const storedEmbeds: MessageEmbed[] = Array.isArray(message.embed_json)
+    ? message.embed_json
+    : message.embed_json
+      ? [message.embed_json]
+      : [];
+  const firstUrl =
+    storedEmbeds.length === 0 ? extractUrls(message.content)[0] ?? null : null;
+  const liveEmbed = useFetchEmbed(firstUrl);
+
   return (
     <li
       className={cn(
         "group relative flex gap-3 rounded-lg px-1 hover:bg-white/[0.03]",
         grouped && !compact && "mt-0",
         compact && "py-0.5",
+        message.pinned_at && "bg-amber-500/[0.04]",
       )}
     >
       {!grouped && !compact ? (
@@ -301,6 +356,9 @@ function MessageRow({
             {message.edited_at && (
               <span className="text-[10px] text-text-muted">(edited)</span>
             )}
+            {message.pinned_at && (
+              <span className="text-[10px] text-amber-300/90">Pinned</span>
+            )}
           </div>
         )}
 
@@ -338,15 +396,56 @@ function MessageRow({
             </div>
           </div>
         ) : (
-          <p
-            className={cn(
-              "whitespace-pre-wrap break-words text-sm leading-relaxed text-text-secondary",
-              !grouped && "mt-0.5",
-            )}
-          >
-            <FormattedText text={message.content} />
-          </p>
+          message.content && (
+            <p
+              className={cn(
+                "whitespace-pre-wrap break-words text-sm leading-relaxed text-text-secondary",
+                !grouped && "mt-0.5",
+              )}
+            >
+              <FormattedText text={message.content} />
+            </p>
+          )
         )}
+
+        {(message.attachments?.length ?? 0) > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {message.attachments!.map((a) => {
+              const isImage = (a.content_type || "").startsWith("image/") ||
+                /\.(png|jpe?g|gif|webp|avif)$/i.test(a.filename);
+              return isImage ? (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => onOpenAttachment(a)}
+                  className="block overflow-hidden rounded-lg border border-border"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={a.url}
+                    alt={a.filename}
+                    className="max-h-80 max-w-sm object-contain"
+                  />
+                </button>
+              ) : (
+                <a
+                  key={a.id}
+                  href={a.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs text-accent hover:underline"
+                >
+                  {a.filename}
+                </a>
+              );
+            })}
+          </div>
+        )}
+
+        {storedEmbeds.map((e) => (
+          <LinkEmbedCard key={e.url} embed={e} />
+        ))}
+        {liveEmbed && <LinkEmbedCard embed={liveEmbed} />}
 
         {(message.reactions?.length ?? 0) > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
@@ -388,6 +487,24 @@ function MessageRow({
         >
           Reply
         </button>
+        {onPin && (
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text"
+            onClick={onPin}
+          >
+            {message.pinned_at ? "Unpin" : "Pin"}
+          </button>
+        )}
+        {onStartThread && (
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text"
+            onClick={onStartThread}
+          >
+            Thread
+          </button>
+        )}
         {isOwn && (
           <>
             <button

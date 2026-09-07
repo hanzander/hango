@@ -40,6 +40,12 @@ export function ServersHome({
           hango
         </Link>
         <div className="flex items-center gap-3">
+          <Link
+            href="/app/friends"
+            className="text-xs text-text-muted hover:text-text"
+          >
+            Friends
+          </Link>
           <div className="flex items-center gap-2">
             <Avatar name={displayName} src={avatarUrl} size="sm" />
             <span className="hidden text-sm text-text-secondary sm:inline">

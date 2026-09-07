@@ -13,12 +13,12 @@ import {
 import type { Channel, Message, Profile, Server } from "@/lib/types";
 import { ChannelList } from "./ChannelList";
 import { MessagePane } from "./MessagePane";
-import { MessageComposer } from "./MessageComposer";
+import { MessageComposer, type SendPayload } from "./MessageComposer";
 import { UserBar } from "./UserBar";
 import { VoiceConnectedBar } from "./VoiceConnectedBar";
 import { ProfileEditor } from "./ProfileEditor";
 import { UserProfilePopout } from "./UserProfilePopout";
-import { CreateChannelModal } from "./CreateChannelModal";
+import { RolesModal } from "./RolesModal";
 import { MembersPanel, type ServerMember } from "./MembersPanel";
 import { useServerPresence } from "@/hooks/useServerPresence";
 import { createClient } from "@/lib/supabase/client";
@@ -78,10 +78,14 @@ type AppShellProps = {
   serverMuted?: boolean;
   unreadChannels?: Set<string>;
   compact?: boolean;
-  onSend: (content: string, replyToId?: string | null) => Promise<void> | void;
+  searchQuery?: string;
+  pinsOnly?: boolean;
+  onSend: (payload: SendPayload) => Promise<void> | void;
   onEdit?: (messageId: string, content: string) => Promise<void> | void;
   onDelete?: (messageId: string) => Promise<void> | void;
   onReact?: (messageId: string, emoji: string) => Promise<void> | void;
+  onPin?: (messageId: string, pin: boolean) => Promise<void> | void;
+  onStartThread?: (message: Message) => void;
   onReply?: (message: Message) => void;
   onCancelReply?: () => void;
   onTyping?: () => void;
@@ -89,6 +93,8 @@ type AppShellProps = {
   onMuteChannel?: (channelId: string, mute: boolean) => Promise<void> | void;
   onMuteServer?: (mute: boolean) => Promise<void> | void;
   onToggleCompact?: () => void;
+  onSearchChange?: (q: string) => void;
+  onTogglePins?: () => void;
   onSignOut?: () => void;
   onProfileSaved?: (next: Profile) => void;
 };
@@ -166,10 +172,14 @@ export function AppShell({
   serverMuted,
   unreadChannels,
   compact,
+  searchQuery = "",
+  pinsOnly = false,
   onSend,
   onEdit,
   onDelete,
   onReact,
+  onPin,
+  onStartThread,
   onReply,
   onCancelReply,
   onTyping,
@@ -177,6 +187,8 @@ export function AppShell({
   onMuteChannel,
   onMuteServer,
   onToggleCompact,
+  onSearchChange,
+  onTogglePins,
   onSignOut,
   onProfileSaved,
 }: AppShellProps) {
@@ -192,6 +204,7 @@ export function AppShell({
   const [speakingIds, setSpeakingIds] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [rolesOpen, setRolesOpen] = useState(false);
   const [popoutProfile, setPopoutProfile] = useState<Profile | null>(null);
   const [localProfile, setLocalProfile] = useState<Profile | null>(
     profile ?? null,
@@ -457,6 +470,7 @@ export function AppShell({
             onMuteChannel={demo ? undefined : onMuteChannel}
             onMuteServer={demo ? undefined : onMuteServer}
             onCopyInvite={() => toast("Invite copied", "success")}
+            onOpenRoles={demo ? undefined : () => setRolesOpen(true)}
           />
           {inCall && voiceSession && !demo && (
             <VoiceConnectedBar
@@ -615,12 +629,35 @@ export function AppShell({
                 currentUserId={userId}
                 compact={compact}
                 typingNames={typingNames}
+                searchQuery={searchQuery}
+                pinsOnly={pinsOnly}
                 onEdit={onEdit}
                 onDelete={onDelete}
                 onReply={onReply}
                 onReact={onReact}
+                onPin={onPin}
+                onStartThread={onStartThread}
                 onOpenProfile={(id) => void openProfile(id)}
               />
+              {onSearchChange && searchQuery !== undefined && (
+                <div className="flex items-center gap-2 border-t border-border bg-chat px-4 py-1.5">
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => onSearchChange(e.target.value)}
+                    placeholder="Search messages in channel…"
+                    className="min-w-0 flex-1 rounded-md border border-border bg-bg-elevated px-2 py-1 text-xs text-text outline-none"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      className="text-[11px] text-text-muted hover:text-text"
+                      onClick={() => onSearchChange("")}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
               <MessageComposer
                 channelName={channel.name}
                 channelId={channel.id}
@@ -628,6 +665,10 @@ export function AppShell({
                 onCancelReply={onCancelReply}
                 onSend={onSend}
                 onTyping={onTyping}
+                onToggleSearch={() =>
+                  onSearchChange?.(searchQuery ? "" : " ")
+                }
+                onTogglePins={onTogglePins}
               />
             </>
           ))}
@@ -687,6 +728,15 @@ export function AppShell({
           open={createOpen}
           onClose={() => setCreateOpen(false)}
           onCreate={onCreateChannel}
+        />
+      )}
+
+      {!demo && (
+        <RolesModal
+          open={rolesOpen}
+          onClose={() => setRolesOpen(false)}
+          serverId={server.id}
+          isOwner={server.owner_id === userId}
         />
       )}
 

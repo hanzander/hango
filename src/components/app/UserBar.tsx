@@ -57,6 +57,26 @@ export function UserBar({
           {compact ? "Cozy" : "Compact"}
         </button>
       )}
+      <button
+        type="button"
+        onClick={() => {
+          try {
+            const next = localStorage.getItem("hango-mentions-only") !== "1";
+            localStorage.setItem("hango-mentions-only", next ? "1" : "0");
+            window.alert(
+              next
+                ? "Notifications: mentions only"
+                : "Notifications: all messages",
+            );
+          } catch {
+            /* ignore */
+          }
+        }}
+        className="rounded-md px-1.5 py-1 text-[10px] text-text-muted transition-colors hover:bg-bg-hover hover:text-text"
+        title="Toggle mentions-only notifications"
+      >
+        @
+      </button>
       {onOpenSettings && (
         <button
           type="button"

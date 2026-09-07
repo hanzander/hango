@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import type {
   Channel,
   Message,
+  MessageAttachment,
   MessageReaction,
   Profile,
   Server,
@@ -22,6 +23,8 @@ import type {
 import { isSupabaseConfigured } from "@/lib/utils";
 import { playMessageNotification } from "@/lib/call-sounds";
 import { useToast } from "@/components/ui/Toast";
+import type { SendPayload } from "@/components/app/MessageComposer";
+import { extractUrls } from "@/lib/embeds";
 
 type ChatWorkspaceProps = {
   serverId?: string;
@@ -33,11 +36,13 @@ function enrichMessages(
   rows: Message[],
   replyMap: Map<string, Message>,
   reactionsByMsg: Map<string, MessageReaction[]>,
+  attachmentsByMsg: Map<string, MessageAttachment[]>,
 ): Message[] {
   return rows.map((m) => ({
     ...m,
     reply_to: m.reply_to_id ? replyMap.get(m.reply_to_id) ?? null : null,
     reactions: reactionsByMsg.get(m.id) ?? [],
+    attachments: attachmentsByMsg.get(m.id) ?? m.attachments ?? [],
   }));
 }
 
@@ -71,6 +76,8 @@ export function ChatWorkspace({
   const [mutedServers, setMutedServers] = useState<Set<string>>(new Set());
   const [unreadChannels, setUnreadChannels] = useState<Set<string>>(new Set());
   const [compact, setCompact] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [pinsOnly, setPinsOnly] = useState(false);
   const typingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeChannelIdRef = useRef<string | undefined>(undefined);
   const typingChannelRef = useRef<ReturnType<
@@ -117,6 +124,8 @@ export function ChatWorkspace({
   useEffect(() => {
     setReplyTo(null);
     setTypingNames([]);
+    setSearchQuery("");
+    setPinsOnly(false);
     if (activeChannel?.id) {
       setUnreadChannels((prev) => {
         if (!prev.has(activeChannel.id)) return prev;
@@ -319,6 +328,7 @@ export function ChatWorkspace({
 
       const msgIds = rows.map((m) => m.id);
       const reactionsByMsg = new Map<string, MessageReaction[]>();
+      const attachmentsByMsg = new Map<string, MessageAttachment[]>();
       if (msgIds.length) {
         const { data: reactions, error: reactErr } = await supabase
           .from("message_reactions")
@@ -331,10 +341,23 @@ export function ChatWorkspace({
             reactionsByMsg.set(r.message_id, list);
           }
         }
+        const { data: atts, error: attErr } = await supabase
+          .from("message_attachments")
+          .select("*")
+          .in("message_id", msgIds);
+        if (!attErr) {
+          for (const a of (atts as MessageAttachment[]) ?? []) {
+            const list = attachmentsByMsg.get(a.message_id) ?? [];
+            list.push(a);
+            attachmentsByMsg.set(a.message_id, list);
+          }
+        }
       }
 
       if (cancelled) return;
-      setMessages(enrichMessages(rows, replyMap, reactionsByMsg));
+      setMessages(
+        enrichMessages(rows, replyMap, reactionsByMsg, attachmentsByMsg),
+      );
       setLoadingMessages(false);
     }
 
@@ -524,7 +547,15 @@ export function ChatWorkspace({
 
           if (serverMuted || mutedChannels.has(row.channel_id)) return;
 
-          void myName;
+          const mentionsOnly =
+            typeof window !== "undefined" &&
+            localStorage.getItem("hango-mentions-only") === "1";
+          const mentioned =
+            row.content.includes(`@${myName}`) ||
+            row.content.includes("@everyone") ||
+            row.content.includes("@here");
+
+          if (mentionsOnly && !mentioned) return;
           playMessageNotification();
         },
       )
@@ -544,15 +575,44 @@ export function ChatWorkspace({
   ]);
 
   const handleSend = useCallback(
-    async (content: string, replyToId?: string | null) => {
+    async (payload: SendPayload) => {
       if (!activeChannel) return;
+      const {
+        content: rawContent,
+        replyToId,
+        files = [],
+        gifUrl,
+        gifName,
+      } = payload;
+      const content = rawContent.trim();
+      if (!content && files.length === 0 && !gifUrl) return;
 
       if (!configured) {
+        const localAtts: MessageAttachment[] = [
+          ...files.map((f, i) => ({
+            id: `local-a-${Date.now()}-${i}`,
+            message_id: "",
+            url: URL.createObjectURL(f),
+            filename: f.name,
+            content_type: f.type,
+          })),
+          ...(gifUrl
+            ? [
+                {
+                  id: `local-gif-${Date.now()}`,
+                  message_id: "",
+                  url: gifUrl,
+                  filename: gifName || "gif.gif",
+                  content_type: "image/gif",
+                },
+              ]
+            : []),
+        ];
         const msg: Message = {
           id: `local-${Date.now()}`,
           channel_id: activeChannel.id,
           author_id: MOCK_PROFILE.id,
-          content,
+          content: content || (gifUrl ? "GIF" : " "),
           created_at: new Date().toISOString(),
           reply_to_id: replyToId ?? null,
           author: MOCK_PROFILE,
@@ -562,6 +622,7 @@ export function ChatWorkspace({
               ) ?? null
             : null,
           reactions: [],
+          attachments: localAtts.map((a) => ({ ...a, message_id: `local-${Date.now()}` })),
         };
         setDemoMessages((prev) => ({
           ...prev,
@@ -574,35 +635,130 @@ export function ChatWorkspace({
       if (!profile) return;
       const supabase = createClient();
 
-      // Only send reply_to_id when set — column may not exist until migration 005
-      const payload: Record<string, unknown> = {
+      const body = content || (gifUrl || files.length ? " " : "");
+      const insertPayload: Record<string, unknown> = {
         channel_id: activeChannel.id,
         author_id: profile.id,
-        content,
+        content: body,
       };
-      if (replyToId) payload.reply_to_id = replyToId;
+      if (replyToId) insertPayload.reply_to_id = replyToId;
 
+      // Optional OG embed for first link
+      const firstUrl = extractUrls(content)[0];
+      if (firstUrl) {
+        try {
+          const emb = await fetch(
+            `/api/embed?url=${encodeURIComponent(firstUrl)}`,
+          ).then((r) => r.json());
+          if (emb?.url) insertPayload.embed_json = emb;
+        } catch {
+          /* ignore */
+        }
+      }
+
+      let row: Message | null = null;
       const { data, error } = await supabase
         .from("messages")
-        .insert(payload)
+        .insert(insertPayload)
         .select("*, author:profiles!author_id(*)")
         .single();
 
       if (error) {
-        toast(error.message, "danger");
-        throw error;
+        if (/content/i.test(error.message) && body === " ") {
+          const retry = await supabase
+            .from("messages")
+            .insert({ ...insertPayload, content: gifUrl ? "GIF" : "📎" })
+            .select("*, author:profiles!author_id(*)")
+            .single();
+          if (retry.error) {
+            toast(retry.error.message, "danger");
+            throw retry.error;
+          }
+          row = retry.data as Message;
+        } else {
+          toast(error.message, "danger");
+          throw error;
+        }
+      } else {
+        row = data as Message;
       }
 
-      const row = data as Message;
+      if (!row?.id) {
+        toast("Message send failed", "danger");
+        throw new Error("empty");
+      }
+
+      const attachments: MessageAttachment[] = [];
+
+      async function uploadFile(file: File, forcedName?: string) {
+        const safe = (forcedName || file.name).replace(/[^\w.\-]+/g, "_");
+        const path = `${profile!.id}/${activeChannel!.id}/${Date.now()}-${safe}`;
+        const { error: upErr } = await supabase.storage
+          .from("chat-media")
+          .upload(path, file, { contentType: file.type, upsert: false });
+        if (upErr) {
+          toast(upErr.message, "danger");
+          return;
+        }
+        const { data: pub } = supabase.storage
+          .from("chat-media")
+          .getPublicUrl(path);
+        const { data: att, error: attErr } = await supabase
+          .from("message_attachments")
+          .insert({
+            message_id: row.id,
+            url: pub.publicUrl,
+            filename: forcedName || file.name,
+            content_type: file.type || "application/octet-stream",
+            size_bytes: file.size,
+          })
+          .select("*")
+          .single();
+        if (!attErr && att) attachments.push(att as MessageAttachment);
+        else if (attErr) toast(attErr.message, "danger");
+      }
+
+      for (const file of files) {
+        await uploadFile(file);
+      }
+
+      if (gifUrl) {
+        // Store remote GIF URL as attachment (no re-upload)
+        const { data: att, error: attErr } = await supabase
+          .from("message_attachments")
+          .insert({
+            message_id: row.id,
+            url: gifUrl,
+            filename: gifName || "tenor.gif",
+            content_type: "image/gif",
+          })
+          .select("*")
+          .single();
+        if (!attErr && att) attachments.push(att as MessageAttachment);
+        else if (attErr) {
+          // Fallback: show gif via content link only
+          attachments.push({
+            id: `tmp-${Date.now()}`,
+            message_id: row.id,
+            url: gifUrl,
+            filename: gifName || "tenor.gif",
+            content_type: "image/gif",
+          });
+        }
+      }
+
       const reply_to = replyToId
-        ? messages.find((m) => m.id === replyToId) ??
-          (row.reply_to_id
-            ? ({ id: row.reply_to_id, content: "", author_id: "", channel_id: "", created_at: "" } as Message)
-            : null)
+        ? messages.find((m) => m.id === replyToId) ?? null
         : null;
 
       setMessages((prev) => {
-        if (prev.some((m) => m.id === row.id)) return prev;
+        if (prev.some((m) => m.id === row.id)) {
+          return prev.map((m) =>
+            m.id === row.id
+              ? { ...m, attachments: [...(m.attachments ?? []), ...attachments] }
+              : m,
+          );
+        }
         return [
           ...prev,
           {
@@ -610,12 +766,78 @@ export function ChatWorkspace({
             author: row.author ?? profile,
             reply_to,
             reactions: [],
+            attachments,
           },
         ];
       });
       setReplyTo(null);
     },
     [activeChannel, configured, profile, demoMessages, toast, messages],
+  );
+
+  const handlePin = useCallback(
+    async (messageId: string, pin: boolean) => {
+      if (!configured || !profile) return;
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("messages")
+        .update(
+          pin
+            ? { pinned_at: new Date().toISOString(), pinned_by: profile.id }
+            : { pinned_at: null, pinned_by: null },
+        )
+        .eq("id", messageId);
+      if (error) {
+        toast(error.message, "danger");
+        return;
+      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                pinned_at: pin ? new Date().toISOString() : null,
+                pinned_by: pin ? profile.id : null,
+              }
+            : m,
+        ),
+      );
+      toast(pin ? "Message pinned" : "Message unpinned", "success");
+    },
+    [configured, profile, toast],
+  );
+
+  const handleStartThread = useCallback(
+    async (message: Message) => {
+      if (!configured || !profile || !activeChannel) return;
+      const supabase = createClient();
+      const name = message.content.slice(0, 40) || "Thread";
+      const { data, error } = await supabase
+        .from("threads")
+        .insert({
+          channel_id: activeChannel.id,
+          root_message_id: message.id,
+          name,
+          created_by: profile.id,
+        })
+        .select("*")
+        .single();
+      if (error) {
+        toast(
+          /relation|threads/i.test(error.message)
+            ? "Run migration 006 for threads"
+            : error.message,
+          "danger",
+        );
+        return;
+      }
+      await supabase
+        .from("messages")
+        .update({ thread_id: (data as { id: string }).id })
+        .eq("id", message.id);
+      toast(`Thread “${name}” started`, "success");
+    },
+    [configured, profile, activeChannel, toast],
   );
 
   const handleEdit = useCallback(
@@ -895,10 +1117,14 @@ export function ChatWorkspace({
       serverMuted={mutedServers.has(activeServer.id)}
       unreadChannels={unreadChannels}
       compact={compact}
+      searchQuery={searchQuery}
+      pinsOnly={pinsOnly}
       onSend={handleSend}
       onEdit={handleEdit}
       onDelete={handleDelete}
       onReact={handleReact}
+      onPin={handlePin}
+      onStartThread={handleStartThread}
       onReply={setReplyTo}
       onCancelReply={() => setReplyTo(null)}
       onTyping={handleTyping}
@@ -906,6 +1132,11 @@ export function ChatWorkspace({
       onMuteChannel={handleMuteChannel}
       onMuteServer={handleMuteServer}
       onToggleCompact={handleToggleCompact}
+      onSearchChange={setSearchQuery}
+      onTogglePins={() => {
+        setPinsOnly((v) => !v);
+        setSearchQuery("");
+      }}
       onSignOut={handleSignOut}
       onProfileSaved={handleProfileSaved}
     />

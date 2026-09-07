@@ -29,6 +29,25 @@ export type Channel = {
   created_at?: string;
 };
 
+export type MessageAttachment = {
+  id: string;
+  message_id: string;
+  url: string;
+  filename: string;
+  content_type?: string | null;
+  size_bytes?: number | null;
+  width?: number | null;
+  height?: number | null;
+};
+
+export type MessageEmbed = {
+  url: string;
+  title?: string | null;
+  description?: string | null;
+  image?: string | null;
+  site?: string | null;
+};
+
 export type Message = {
   id: string;
   channel_id: string;
@@ -38,9 +57,14 @@ export type Message = {
   edited_at?: string | null;
   deleted_at?: string | null;
   reply_to_id?: string | null;
+  pinned_at?: string | null;
+  pinned_by?: string | null;
+  thread_id?: string | null;
+  embed_json?: MessageEmbed | MessageEmbed[] | null;
   author?: Profile | null;
   reply_to?: Message | null;
   reactions?: MessageReaction[];
+  attachments?: MessageAttachment[];
 };
 
 export type MessageReaction = {
@@ -50,4 +74,46 @@ export type MessageReaction = {
   created_at?: string;
 };
 
+export type Friendship = {
+  id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: "pending" | "accepted" | "blocked";
+  created_at?: string;
+  requester?: Profile | null;
+  addressee?: Profile | null;
+};
+
+export type DmChannel = {
+  id: string;
+  created_at?: string;
+  other?: Profile | null;
+};
+
+export type DmMessage = {
+  id: string;
+  channel_id: string;
+  author_id: string;
+  content: string;
+  created_at: string;
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  author?: Profile | null;
+};
+
+export type ServerRole = {
+  id: string;
+  server_id: string;
+  name: string;
+  color: string;
+  position: number;
+  permissions: number;
+};
+
 export type UserStatus = NonNullable<Profile["status"]>;
+
+export type PendingUpload = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
