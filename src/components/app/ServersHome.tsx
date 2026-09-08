@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import type { Server } from "@/lib/types";
-import { initials } from "@/lib/utils";
+import { initials, cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { ServerActionsModal } from "@/components/app/ServerActionsModal";
 import { Avatar } from "@/components/ui/Avatar";
@@ -262,7 +262,10 @@ export function ServersHome({
             return (
               <div
                 key={server.id}
-                className="hango-server-card relative"
+                className={cn(
+                  "hango-server-card relative",
+                  menuId === server.id && "z-20",
+                )}
                 style={{ animationDelay: `${30 + i * 35}ms` }}
               >
                 <Link
