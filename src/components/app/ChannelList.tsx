@@ -39,6 +39,7 @@ type ChannelListProps = {
   onOpenEmoji?: () => void;
   onOpenThreads?: () => void;
   onOpenInvite?: () => void;
+  onOpenBanner?: () => void;
   onMarkRead?: () => void;
   onEditTopic?: () => void;
   onJoinVoice?: (channel: Channel) => void;
@@ -70,6 +71,7 @@ export function ChannelList({
   onOpenEmoji,
   onOpenThreads,
   onOpenInvite,
+  onOpenBanner,
   onMarkRead,
   onEditTopic,
   onJoinVoice,
@@ -207,6 +209,13 @@ export function ChannelList({
                 icon={<IconInvite />}
                 label="Invite settings"
                 onClick={() => runAndClose(onOpenInvite)}
+              />
+            )}
+            {onOpenBanner && (
+              <MenuItem
+                icon={<IconBanner />}
+                label="Change cover"
+                onClick={() => runAndClose(onOpenBanner)}
               />
             )}
             {server.invite_code && (
@@ -603,6 +612,29 @@ function IconInvite() {
       <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="1.75" />
       <path d="M3.5 18c.8-2.5 2.8-4 5.5-4s4.7 1.5 5.5 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
       <path d="M17 8v6M14 11h6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconBanner() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden>
+      <rect
+        x="3.5"
+        y="6"
+        width="17"
+        height="12"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <path
+        d="M3.5 14.5l4-3.5 3 2.5 4.5-4 5 5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

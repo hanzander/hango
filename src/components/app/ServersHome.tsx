@@ -275,34 +275,52 @@ export function ServersHome({
                     e.preventDefault();
                     enterServerNow(getServerEnterHref(server.id));
                   }}
-                  className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-border-strong bg-[#141312]/90 p-4 pr-12 transition-all duration-200 hover:-translate-y-0.5 hover:border-text-muted hover:bg-bg-subtle"
+                  className="group relative flex flex-col overflow-hidden rounded-2xl border border-border-strong bg-[#141312]/90 transition-all duration-200 hover:-translate-y-0.5 hover:border-text-muted hover:bg-bg-subtle"
                 >
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                    style={{
-                      background:
-                        "radial-gradient(ellipse 80% 70% at 0% 50%, rgba(255,196,140,0.07), transparent 55%)",
-                    }}
+                  <div
+                    className="relative h-[72px] w-full shrink-0 bg-[#1c1917]"
+                    style={
+                      server.banner_url
+                        ? {
+                            backgroundImage: `url(${server.banner_url})`,
+                            backgroundSize: "cover",
+                            backgroundPosition: "center",
+                          }
+                        : {
+                            background:
+                              "linear-gradient(135deg, rgba(255,196,140,0.12), transparent 55%), #1c1917",
+                          }
+                    }
                   />
-                  <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-bg-active text-sm font-medium text-text ring-1 ring-border transition-transform duration-200 group-hover:scale-[1.03]">
-                    {initials(server.name)}
-                  </span>
-                  <div className="relative min-w-0 flex-1">
-                    <p className="truncate font-medium text-text">
-                      {server.name}
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      {isOwner ? "Owner · Enter server" : "Enter server"}
-                    </p>
+                  <div className="relative flex items-center gap-3 px-4 pb-4 pt-0">
+                    <span className="-mt-5 relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-bg-active text-sm font-medium text-text ring-2 ring-[#141312] transition-transform duration-200 group-hover:scale-[1.03]">
+                      {server.icon_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={server.icon_url}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        initials(server.name)
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1 pt-2 pr-8">
+                      <p className="truncate font-medium text-text">
+                        {server.name}
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        {isOwner ? "Owner · Enter server" : "Enter server"}
+                      </p>
+                    </div>
+                    <span className="absolute bottom-4 right-4 text-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-text">
+                      →
+                    </span>
                   </div>
-                  <span className="relative text-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-text">
-                    →
-                  </span>
                 </Link>
 
                 {isOwner && (
-                  <div className="absolute right-2 top-1/2 z-20 -translate-y-1/2">
+                  <div className="absolute right-2 top-[86px] z-20">
                     <button
                       type="button"
                       title="Server options"
@@ -354,7 +372,7 @@ export function ServersHome({
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="hango-server-card flex items-center gap-4 rounded-2xl border border-dashed border-border-strong bg-transparent p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-text-muted hover:bg-[#141312]/60"
+            className="hango-server-card flex min-h-[148px] flex-col justify-center gap-3 rounded-2xl border border-dashed border-border-strong bg-transparent p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-text-muted hover:bg-[#141312]/60"
             style={{ animationDelay: `${80 + servers.length * 60}ms` }}
           >
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl text-xl text-text-muted ring-1 ring-border-strong">

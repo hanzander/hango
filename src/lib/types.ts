@@ -14,6 +14,8 @@ export type Server = {
   id: string;
   name: string;
   icon_url: string | null;
+  /** Discord-style cover shown on server picker cards */
+  banner_url?: string | null;
   owner_id: string;
   invite_code?: string;
   invite_expires_at?: string | null;

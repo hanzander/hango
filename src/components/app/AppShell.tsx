@@ -27,6 +27,7 @@ import { ServerSearch } from "./ServerSearch";
 import { EmojiManager } from "./EmojiManager";
 import { ThreadsPanel } from "./ThreadsPanel";
 import { InviteSettings } from "./InviteSettings";
+import { ServerBannerModal } from "./ServerBannerModal";
 import { MembersPanel, type ServerMember } from "./MembersPanel";
 import { useRouter } from "next/navigation";
 import type { ServerRole } from "@/lib/types";
@@ -260,6 +261,7 @@ export function AppShell({
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [bannerOpen, setBannerOpen] = useState(false);
   const [topicEdit, setTopicEdit] = useState(false);
   const [topicValue, setTopicValue] = useState(channel.topic ?? "");
   const [popoutProfile, setPopoutProfile] = useState<Profile | null>(null);
@@ -726,6 +728,11 @@ export function AppShell({
                 ? undefined
                 : () => setInviteOpen(true)
             }
+            onOpenBanner={
+              demo || server.owner_id !== userId
+                ? undefined
+                : () => setBannerOpen(true)
+            }
             onMarkRead={demo ? undefined : onMarkServerRead}
             onEditTopic={
               demo || isVoice ? undefined : () => setTopicEdit(true)
@@ -1120,6 +1127,15 @@ export function AppShell({
         <InviteSettings
           open={inviteOpen}
           onClose={() => setInviteOpen(false)}
+          server={server}
+          onUpdated={(patch) => onServerUpdated?.(patch)}
+        />
+      )}
+
+      {!demo && (
+        <ServerBannerModal
+          open={bannerOpen}
+          onClose={() => setBannerOpen(false)}
           server={server}
           onUpdated={(patch) => onServerUpdated?.(patch)}
         />

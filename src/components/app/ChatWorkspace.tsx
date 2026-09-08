@@ -1513,13 +1513,23 @@ export function ChatWorkspace({
       onAssignRole={handleAssignRole}
       onRemoveRole={handleRemoveRole}
       onMessageUser={handleOpenDm}
-      onServerUpdated={(patch) =>
+      onServerUpdated={(patch) => {
         setServers((prev) =>
           prev.map((s) =>
             s.id === activeServer.id ? { ...s, ...patch } : s,
           ),
-        )
-      }
+        );
+        const cache = getAppBootstrapCache();
+        if (cache) {
+          setAppBootstrapCache({
+            ...cache,
+            servers: cache.servers.map((s) =>
+              s.id === activeServer.id ? { ...s, ...patch } : s,
+            ),
+            savedAt: Date.now(),
+          });
+        }
+      }}
       onSignOut={requestSignOut}
       onProfileSaved={handleProfileSaved}
     />
