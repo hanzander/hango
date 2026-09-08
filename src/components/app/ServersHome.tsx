@@ -39,11 +39,13 @@ export function ServersHome({
   const [open, setOpen] = useState(false);
   const [sayingBye, setSayingBye] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [renaming, setRenaming] = useState<Server | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const accountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setServers(initialServers);
@@ -57,6 +59,22 @@ export function ServersHome({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menuId]);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (!accountRef.current?.contains(e.target as Node)) setAccountOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setAccountOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [accountOpen]);
 
   const finishGoodbye = useCallback(async () => {
     armAuthCover("goodbye");
@@ -145,41 +163,86 @@ export function ServersHome({
       />
 
       <header className="relative z-10 mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-6 py-6">
-        <div className="flex min-w-0 items-center gap-4">
-          <Link
-            href="/"
-            className="text-lg font-semibold tracking-tight text-text transition-opacity hover:opacity-80"
-          >
-            hango
-          </Link>
-          <Link
-            href="/app/friends"
-            className="text-sm text-text-muted transition-colors hover:text-text"
-          >
-            Friends
-          </Link>
-        </div>
-        {onSignOut ? (
+        <Link
+          href="/"
+          className="text-lg font-semibold tracking-tight text-text transition-opacity hover:opacity-80"
+        >
+          hango
+        </Link>
+        <div ref={accountRef} className="relative shrink-0">
           <button
             type="button"
-            onClick={() => setSayingBye(true)}
-            title="Log out"
-            aria-label={`Log out (${displayName})`}
-            className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            onClick={() => setAccountOpen((v) => !v)}
+            aria-expanded={accountOpen}
+            aria-haspopup="menu"
+            title={displayName}
+            aria-label={`Account menu for ${displayName}`}
+            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <Avatar
               name={displayName}
               src={avatarUrl}
               size="sm"
-              className="transition ring-1 ring-white/10 group-hover:ring-white/35"
+              className="transition ring-1 ring-white/10 hover:ring-white/35"
             />
-            <span className="pointer-events-none absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted opacity-0 shadow-lg ring-1 ring-border transition group-hover:opacity-100">
-              Log out
-            </span>
           </button>
-        ) : (
-          <Avatar name={displayName} src={avatarUrl} size="sm" />
-        )}
+          {accountOpen && (
+            <div
+              role="menu"
+              className="hango-anim-pop absolute right-0 top-[calc(100%+8px)] z-50 w-52 overflow-hidden rounded-xl border border-border-strong bg-[#161412] py-1 shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
+            >
+              <div className="border-b border-border px-3 py-2.5">
+                <p className="truncate text-sm font-medium text-text">
+                  {displayName}
+                </p>
+                <p className="text-[11px] text-text-muted">Signed in</p>
+              </div>
+              <Link
+                href="/app/friends"
+                role="menuitem"
+                onClick={() => setAccountOpen(false)}
+                className="mx-1 mt-1 flex items-center rounded-lg px-2.5 py-2 text-sm text-text-secondary transition hover:bg-bg-hover hover:text-text"
+              >
+                Friends
+              </Link>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setAccountOpen(false);
+                  setOpen(true);
+                }}
+                className="mx-1 flex w-[calc(100%-0.5rem)] items-center rounded-lg px-2.5 py-2 text-left text-sm text-text-secondary transition hover:bg-bg-hover hover:text-text"
+              >
+                Create / join server
+              </button>
+              <Link
+                href="/"
+                role="menuitem"
+                onClick={() => setAccountOpen(false)}
+                className="mx-1 flex items-center rounded-lg px-2.5 py-2 text-sm text-text-secondary transition hover:bg-bg-hover hover:text-text"
+              >
+                Marketing site
+              </Link>
+              {onSignOut && (
+                <>
+                  <div className="mx-2 my-1 border-t border-border" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setAccountOpen(false);
+                      setSayingBye(true);
+                    }}
+                    className="mx-1 mb-1 flex w-[calc(100%-0.5rem)] items-center rounded-lg px-2.5 py-2 text-left text-sm text-rose-400 transition hover:bg-rose-500/10"
+                  >
+                    Log out
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </header>
 
       <main className="hango-servers-in relative z-10 mx-auto w-full max-w-3xl px-6 pb-24 pt-6 md:pt-10">
