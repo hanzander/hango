@@ -315,9 +315,6 @@ export function ServersHome({
                       <p className="truncate text-[15px] font-semibold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]">
                         {server.name}
                       </p>
-                      <p className="mt-0.5 text-xs text-white/65">
-                        {isOwner ? "Owner · Enter server" : "Enter server"}
-                      </p>
                     </div>
                     <span className="mb-0.5 text-white/55 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-white">
                       →
