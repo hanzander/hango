@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import type { Server } from "@/lib/types";
-import { initials, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { ServerActionsModal } from "@/components/app/ServerActionsModal";
 import { Avatar } from "@/components/ui/Avatar";
