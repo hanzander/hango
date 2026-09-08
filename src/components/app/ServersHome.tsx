@@ -162,7 +162,7 @@ export function ServersHome({
         }}
       />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-6 py-6">
+      <header className="relative z-30 mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-6 py-6">
         <Link
           href="/"
           className="text-lg font-semibold tracking-tight text-text transition-opacity hover:opacity-80"
@@ -237,7 +237,7 @@ export function ServersHome({
         </div>
       </header>
 
-      <main className="hango-servers-in relative z-10 mx-auto w-full max-w-3xl px-6 pb-24 pt-6 md:pt-10">
+      <main className="hango-servers-in relative z-0 mx-auto w-full max-w-3xl px-6 pb-24 pt-6 md:pt-10">
         <p className="text-sm text-text-muted">
           Hey {displayName.split(" ")[0] || displayName}
         </p>
