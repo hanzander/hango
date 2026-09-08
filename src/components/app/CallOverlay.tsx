@@ -26,7 +26,6 @@ import {
 } from "livekit-client";
 import { Avatar } from "@/components/ui/Avatar";
 import {
-  playLeaveSound,
   playMuteSound,
   playUnmuteSound,
   playCameraOffSound,
@@ -1306,7 +1305,6 @@ export function CallOverlay({
 
   function handleLeave() {
     intentionalLeave.current = true;
-    playLeaveSound();
     const r = roomRef.current;
     window.setTimeout(() => {
       void r?.disconnect();

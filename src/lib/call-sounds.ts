@@ -1,23 +1,30 @@
 type Tone = {
   freq: number;
+  /** Optional glide target for a soft slide */
+  freqEnd?: number;
   start: number;
   dur: number;
   type?: OscillatorType;
   gain?: number;
+  attack?: number;
+  release?: number;
 };
 
 let sharedCtx: AudioContext | null = null;
 let lastPlayAt = 0;
-const MIN_GAP_MS = 80;
+const MIN_GAP_MS = 70;
 
-/** Keep SFX clearly audible over call audio (+10%) */
+/** Keep SFX clearly audible over call audio */
 const VOL = {
-  join: 0.22 * 1.1,
-  leave: 0.2 * 1.1,
-  peer: 0.16 * 1.1,
-  mute: 0.1 * 1.1,
-  camera: 0.09 * 1.1,
-  /** Chat pings — much louder so #general is hard to miss */
+  serverEnter: 0.2,
+  serverLeave: 0.18,
+  join: 0.24,
+  leave: 0.22,
+  peer: 0.15,
+  mute: 0.1,
+  camera: 0.09,
+  stream: 0.19,
+  watcher: 0.14,
   message: 0.55,
   soundboard: 0.42,
 } as const;
@@ -51,7 +58,10 @@ export function unlockAudio() {
 
 function playTones(
   tones: Tone[],
-  { volume = 0.14 }: { volume?: number } = {},
+  {
+    volume = 0.14,
+    filterFreq,
+  }: { volume?: number; filterFreq?: number } = {},
 ) {
   try {
     const nowMs = performance.now();
@@ -67,8 +77,20 @@ function playTones(
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(volume, now + 0.012);
-    master.connect(ctx.destination);
+    master.gain.exponentialRampToValueAtTime(volume, now + 0.014);
+
+    let chain: AudioNode = master;
+    if (filterFreq) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(filterFreq, now);
+      filter.Q.setValueAtTime(0.7, now);
+      master.connect(filter);
+      filter.connect(ctx.destination);
+      chain = filter;
+    } else {
+      master.connect(ctx.destination);
+    }
 
     let lastEnd = now;
     const nodes: AudioNode[] = [master];
@@ -77,28 +99,42 @@ function playTones(
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       const peak = tone.gain ?? 0.85;
+      const attack = tone.attack ?? 0.018;
+      const release = tone.release ?? Math.min(0.12, tone.dur * 0.45);
       const start = now + tone.start;
       const end = start + tone.dur;
       lastEnd = Math.max(lastEnd, end);
       osc.type = tone.type ?? "sine";
       osc.frequency.setValueAtTime(tone.freq, start);
+      if (tone.freqEnd != null && tone.freqEnd > 0) {
+        osc.frequency.exponentialRampToValueAtTime(
+          Math.max(40, tone.freqEnd),
+          end,
+        );
+      }
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(peak, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(
+        peak,
+        start + Math.min(attack, tone.dur * 0.35),
+      );
+      const fadeAt = Math.max(start + attack, end - release);
+      gain.gain.setValueAtTime(peak, fadeAt);
       gain.gain.exponentialRampToValueAtTime(0.0001, end);
       osc.connect(gain);
       gain.connect(master);
       nodes.push(osc, gain);
       osc.start(start);
-      osc.stop(end + 0.03);
+      osc.stop(end + 0.04);
     }
 
     master.gain.setValueAtTime(volume, lastEnd);
-    master.gain.exponentialRampToValueAtTime(0.0001, lastEnd + 0.06);
+    master.gain.exponentialRampToValueAtTime(0.0001, lastEnd + 0.08);
 
-    const cleanupMs = Math.ceil((lastEnd - now + 0.2) * 1000);
+    const cleanupMs = Math.ceil((lastEnd - now + 0.25) * 1000);
     window.setTimeout(() => {
       try {
         master.disconnect();
+        chain.disconnect();
         for (const n of nodes) {
           try {
             n.disconnect();
@@ -115,98 +151,135 @@ function playTones(
   }
 }
 
+/** Soft harp lift — entering a server from the picker */
+export function playServerEnterSound() {
+  playTones(
+    [
+      { freq: 349.23, start: 0, dur: 0.2, type: "sine", gain: 0.45, attack: 0.03 },
+      { freq: 440.0, start: 0.07, dur: 0.22, type: "sine", gain: 0.5, attack: 0.03 },
+      { freq: 523.25, start: 0.15, dur: 0.28, type: "triangle", gain: 0.42, attack: 0.04 },
+      { freq: 698.46, start: 0.24, dur: 0.34, type: "sine", gain: 0.38, attack: 0.05, release: 0.18 },
+    ],
+    { volume: VOL.serverEnter, filterFreq: 4200 },
+  );
+}
+
+/** Soft dusk settle — leaving back to server picker */
+export function playServerLeaveSound() {
+  playTones(
+    [
+      { freq: 659.25, start: 0, dur: 0.18, type: "sine", gain: 0.42, attack: 0.025 },
+      { freq: 523.25, start: 0.1, dur: 0.22, type: "triangle", gain: 0.4, attack: 0.03 },
+      { freq: 392.0, start: 0.2, dur: 0.32, type: "sine", gain: 0.36, attack: 0.04, release: 0.2 },
+    ],
+    { volume: VOL.serverLeave, filterFreq: 3200 },
+  );
+}
+
+/** You joined a voice channel — glass sparkle, not the server harp */
 export function playJoinSound() {
   playTones(
     [
-      { freq: 587.33, start: 0, dur: 0.14 },
-      { freq: 783.99, start: 0.09, dur: 0.22 },
+      { freq: 987.77, start: 0, dur: 0.07, type: "sine", gain: 0.35, attack: 0.008 },
+      { freq: 1318.51, start: 0.03, dur: 0.09, type: "sine", gain: 0.4, attack: 0.01 },
+      { freq: 783.99, start: 0.1, dur: 0.2, type: "triangle", gain: 0.55, attack: 0.02, release: 0.12 },
+      { freq: 1174.66, start: 0.14, dur: 0.16, type: "sine", gain: 0.28, attack: 0.015 },
     ],
-    { volume: VOL.join },
+    { volume: VOL.join, filterFreq: 5600 },
   );
 }
 
+/** You left a voice channel — warm low resolve */
 export function playLeaveSound() {
   playTones(
     [
-      { freq: 659.25, start: 0, dur: 0.12 },
-      { freq: 493.88, start: 0.09, dur: 0.2 },
+      { freq: 492.88, freqEnd: 369.99, start: 0, dur: 0.16, type: "sine", gain: 0.5, attack: 0.02 },
+      { freq: 246.94, start: 0.08, dur: 0.28, type: "triangle", gain: 0.45, attack: 0.03, release: 0.16 },
     ],
-    { volume: VOL.leave },
+    { volume: VOL.leave, filterFreq: 2800 },
   );
 }
 
+/** Another person joined the call — tiny bright tick */
 export function playUserJoinedSound() {
   playTones(
     [
-      { freq: 880, start: 0, dur: 0.07, gain: 0.55 },
-      { freq: 1174.66, start: 0.06, dur: 0.12, gain: 0.65 },
+      { freq: 1480, start: 0, dur: 0.045, type: "sine", gain: 0.4, attack: 0.005 },
+      { freq: 1760, start: 0.04, dur: 0.09, type: "triangle", gain: 0.48, attack: 0.008 },
     ],
-    { volume: VOL.peer },
+    { volume: VOL.peer, filterFreq: 7000 },
   );
 }
 
+/** Another person left the call — soft wood drop */
 export function playUserLeftSound() {
   playTones(
     [
-      { freq: 987.77, start: 0, dur: 0.07, gain: 0.55 },
-      { freq: 659.25, start: 0.07, dur: 0.12, gain: 0.6 },
+      { freq: 415.3, freqEnd: 277.18, start: 0, dur: 0.12, type: "triangle", gain: 0.5, attack: 0.01 },
+      { freq: 207.65, start: 0.06, dur: 0.14, type: "sine", gain: 0.35, attack: 0.015 },
     ],
-    { volume: VOL.peer },
+    { volume: VOL.peer, filterFreq: 2400 },
   );
 }
 
 export function playMuteSound() {
   playTones(
-    [{ freq: 320, start: 0, dur: 0.06, type: "triangle", gain: 0.55 }],
-    { volume: VOL.mute },
+    [{ freq: 268, freqEnd: 190, start: 0, dur: 0.08, type: "triangle", gain: 0.5, attack: 0.008 }],
+    { volume: VOL.mute, filterFreq: 1800 },
   );
 }
 
 export function playUnmuteSound() {
   playTones(
-    [{ freq: 520, start: 0, dur: 0.07, type: "triangle", gain: 0.55 }],
-    { volume: VOL.mute },
+    [
+      { freq: 480, start: 0, dur: 0.05, type: "triangle", gain: 0.4, attack: 0.006 },
+      { freq: 640, start: 0.04, dur: 0.08, type: "sine", gain: 0.45, attack: 0.01 },
+    ],
+    { volume: VOL.mute, filterFreq: 3600 },
   );
 }
 
 export function playCameraOffSound() {
   playTones(
-    [{ freq: 280, start: 0, dur: 0.06, type: "sine", gain: 0.5 }],
-    { volume: VOL.camera },
+    [{ freq: 240, freqEnd: 160, start: 0, dur: 0.09, type: "sine", gain: 0.45, attack: 0.01 }],
+    { volume: VOL.camera, filterFreq: 1600 },
   );
 }
 
 export function playCameraOnSound() {
   playTones(
     [
-      { freq: 440, start: 0, dur: 0.05, type: "sine", gain: 0.45 },
-      { freq: 660, start: 0.04, dur: 0.07, type: "sine", gain: 0.5 },
+      { freq: 560, start: 0, dur: 0.05, type: "sine", gain: 0.4, attack: 0.008 },
+      { freq: 840, start: 0.045, dur: 0.09, type: "triangle", gain: 0.42, attack: 0.012 },
     ],
-    { volume: VOL.camera },
+    { volume: VOL.camera, filterFreq: 4000 },
   );
 }
 
-/** Discord-like: you or someone started screen sharing */
+/** Screen share opened — Lydian shimmer (bright, open) */
 export function playStreamStartedSound() {
   playTones(
     [
-      { freq: 523.25, start: 0, dur: 0.08, type: "sine", gain: 0.55 },
-      { freq: 659.25, start: 0.07, dur: 0.1, type: "sine", gain: 0.65 },
-      { freq: 783.99, start: 0.15, dur: 0.16, type: "sine", gain: 0.7 },
+      { freq: 392.0, start: 0, dur: 0.1, type: "sine", gain: 0.35, attack: 0.02 },
+      { freq: 493.88, start: 0.06, dur: 0.11, type: "sine", gain: 0.4, attack: 0.02 },
+      { freq: 587.33, start: 0.13, dur: 0.12, type: "triangle", gain: 0.45, attack: 0.02 },
+      { freq: 739.99, start: 0.21, dur: 0.14, type: "sine", gain: 0.5, attack: 0.025 },
+      { freq: 987.77, start: 0.3, dur: 0.22, type: "sine", gain: 0.38, attack: 0.03, release: 0.14 },
     ],
-    { volume: VOL.peer * 1.15 },
+    { volume: VOL.stream, filterFreq: 6200 },
   );
 }
 
-/** Discord-like: screen share ended */
+/** Screen share closed — velvet curtain */
 export function playStreamStoppedSound() {
   playTones(
     [
-      { freq: 698.46, start: 0, dur: 0.09, type: "sine", gain: 0.6 },
-      { freq: 523.25, start: 0.08, dur: 0.12, type: "sine", gain: 0.55 },
-      { freq: 392.0, start: 0.16, dur: 0.14, type: "sine", gain: 0.5 },
+      { freq: 830.61, start: 0, dur: 0.1, type: "sine", gain: 0.42, attack: 0.02 },
+      { freq: 622.25, start: 0.08, dur: 0.12, type: "triangle", gain: 0.4, attack: 0.025 },
+      { freq: 415.3, start: 0.17, dur: 0.16, type: "sine", gain: 0.38, attack: 0.03 },
+      { freq: 311.13, start: 0.26, dur: 0.24, type: "sine", gain: 0.32, attack: 0.04, release: 0.16 },
     ],
-    { volume: VOL.peer * 1.1 },
+    { volume: VOL.stream * 0.95, filterFreq: 3600 },
   );
 }
 
@@ -214,10 +287,10 @@ export function playStreamStoppedSound() {
 export function playStreamWatcherJoinedSound() {
   playTones(
     [
-      { freq: 880, start: 0, dur: 0.06, type: "triangle", gain: 0.5 },
-      { freq: 1318.5, start: 0.05, dur: 0.1, type: "triangle", gain: 0.6 },
+      { freq: 622.25, start: 0, dur: 0.06, type: "triangle", gain: 0.42, attack: 0.008 },
+      { freq: 932.33, start: 0.05, dur: 0.11, type: "sine", gain: 0.48, attack: 0.012 },
     ],
-    { volume: VOL.peer },
+    { volume: VOL.watcher, filterFreq: 5200 },
   );
 }
 
@@ -225,10 +298,10 @@ export function playStreamWatcherJoinedSound() {
 export function playStreamWatcherLeftSound() {
   playTones(
     [
-      { freq: 1174.7, start: 0, dur: 0.06, type: "triangle", gain: 0.5 },
-      { freq: 740, start: 0.06, dur: 0.1, type: "triangle", gain: 0.55 },
+      { freq: 830.61, start: 0, dur: 0.07, type: "sine", gain: 0.4, attack: 0.01 },
+      { freq: 466.16, start: 0.06, dur: 0.12, type: "triangle", gain: 0.42, attack: 0.015 },
     ],
-    { volume: VOL.peer },
+    { volume: VOL.watcher, filterFreq: 3000 },
   );
 }
 
@@ -237,7 +310,6 @@ export function playMessageNotification() {
   const nowMs = performance.now();
   if (nowMs - lastMessagePlayAt < 350) return;
   lastMessagePlayAt = nowMs;
-  // Reset shared gap so a recent mute click doesn't eat the chat ping
   lastPlayAt = 0;
   playTones(
     [
@@ -323,7 +395,6 @@ export const SOUNDBOARD_CLIPS: SoundboardClip[] = [
 function playAudioFile(src: string, volume = VOL.soundboard) {
   if (typeof window === "undefined") return;
   try {
-    // One clip at a time — spam used to stack locally while remotes dropped packets
     if (activeSbAudio) {
       try {
         activeSbAudio.pause();

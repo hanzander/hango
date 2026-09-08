@@ -13,6 +13,11 @@ import {
   LEAVE_SERVER_EVENT,
   parseServerHref,
 } from "@/lib/leave-server";
+import {
+  playServerEnterSound,
+  playServerLeaveSound,
+  unlockAudio,
+} from "@/lib/call-sounds";
 
 type HomeState = {
   displayName: string;
@@ -86,6 +91,8 @@ export function AppRouteShell({ children }: { children: ReactNode }) {
       const href =
         (event as CustomEvent<{ href?: string }>).detail?.href ?? "/app";
       if (href === "/app" || href === "/app/") {
+        unlockAudio();
+        playServerLeaveSound();
         setEntering(null);
         setLeaving(true);
         setViewAnim((n) => n + 1);
@@ -101,6 +108,8 @@ export function AppRouteShell({ children }: { children: ReactNode }) {
         router.push(href);
         return;
       }
+      unlockAudio();
+      playServerEnterSound();
       setLeaving(false);
       setEntering({
         serverId: target.serverId,
