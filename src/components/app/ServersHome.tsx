@@ -259,6 +259,7 @@ export function ServersHome({
         <div className="mt-10 grid gap-3 sm:grid-cols-2">
           {servers.map((server, i) => {
             const isOwner = server.owner_id === userId;
+            const hasBanner = Boolean(server.banner_url);
             return (
               <div
                 key={server.id}
@@ -275,52 +276,57 @@ export function ServersHome({
                     e.preventDefault();
                     enterServerNow(getServerEnterHref(server.id));
                   }}
-                  className="group relative flex flex-col overflow-hidden rounded-2xl border border-border-strong bg-[#141312]/90 transition-all duration-200 hover:-translate-y-0.5 hover:border-text-muted hover:bg-bg-subtle"
+                  className="group relative block h-[168px] overflow-hidden rounded-2xl border border-border-strong bg-[#141312] transition-all duration-300 hover:-translate-y-0.5 hover:border-text-muted hover:shadow-[0_20px_40px_rgba(0,0,0,0.35)]"
                 >
-                  <div
-                    className="relative h-[72px] w-full shrink-0 bg-[#1c1917]"
+                  <span
+                    aria-hidden
+                    className="absolute inset-0 scale-100 bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.04]"
                     style={
-                      server.banner_url
-                        ? {
-                            backgroundImage: `url(${server.banner_url})`,
-                            backgroundSize: "cover",
-                            backgroundPosition: "center",
-                          }
+                      hasBanner
+                        ? { backgroundImage: `url(${server.banner_url})` }
                         : {
                             background:
-                              "linear-gradient(135deg, rgba(255,196,140,0.12), transparent 55%), #1c1917",
+                              "radial-gradient(ellipse 90% 80% at 20% 0%, rgba(255,196,140,0.18), transparent 55%), linear-gradient(160deg, #2a241f 0%, #141312 70%)",
                           }
                     }
                   />
-                  <div className="relative flex items-center gap-3 px-4 pb-4 pt-0">
-                    <span className="-mt-5 relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-bg-active text-sm font-medium text-text ring-2 ring-[#141312] transition-transform duration-200 group-hover:scale-[1.03]">
-                      {server.icon_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={server.icon_url}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        initials(server.name)
-                      )}
+                  <span
+                    aria-hidden
+                    className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/10"
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/50 to-transparent"
+                  />
+
+                  {server.icon_url && (
+                    <span className="absolute left-4 top-4 h-11 w-11 overflow-hidden rounded-2xl ring-2 ring-black/40 shadow-lg">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={server.icon_url}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
                     </span>
-                    <div className="min-w-0 flex-1 pt-2 pr-8">
-                      <p className="truncate font-medium text-text">
+                  )}
+
+                  <div className="absolute inset-x-0 bottom-0 flex items-end gap-3 p-4 pr-12">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-semibold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]">
                         {server.name}
                       </p>
-                      <p className="text-xs text-text-muted">
+                      <p className="mt-0.5 text-xs text-white/65">
                         {isOwner ? "Owner · Enter server" : "Enter server"}
                       </p>
                     </div>
-                    <span className="absolute bottom-4 right-4 text-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-text">
+                    <span className="mb-0.5 text-white/55 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-white">
                       →
                     </span>
                   </div>
                 </Link>
 
                 {isOwner && (
-                  <div className="absolute right-2 top-[86px] z-20">
+                  <div className="absolute right-2 top-2 z-20">
                     <button
                       type="button"
                       title="Server options"
@@ -331,7 +337,7 @@ export function ServersHome({
                           id === server.id ? null : server.id,
                         );
                       }}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition hover:bg-white/10 hover:text-text"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-black/35 text-white/80 backdrop-blur-sm transition hover:bg-black/55 hover:text-white"
                     >
                       ···
                     </button>
@@ -372,10 +378,10 @@ export function ServersHome({
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="hango-server-card flex min-h-[148px] flex-col justify-center gap-3 rounded-2xl border border-dashed border-border-strong bg-transparent p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-text-muted hover:bg-[#141312]/60"
+            className="hango-server-card group flex h-[168px] flex-col items-start justify-end gap-2 rounded-2xl border border-dashed border-border-strong bg-transparent p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-text-muted hover:bg-[#141312]/50"
             style={{ animationDelay: `${80 + servers.length * 60}ms` }}
           >
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl text-xl text-text-muted ring-1 ring-border-strong">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl text-lg text-text-muted ring-1 ring-border-strong transition group-hover:text-text group-hover:ring-text-muted">
               +
             </span>
             <div>
