@@ -84,12 +84,7 @@ export function ServerBannerModal({
 
     if (upErr) {
       setBusy(false);
-      toast(
-        /bucket|not found|row-level/i.test(upErr.message)
-          ? "Run migration 010 for server banners (or check storage policies)"
-          : upErr.message,
-        "danger",
-      );
+      toast(upErr.message || "Upload failed", "danger");
       return;
     }
 
