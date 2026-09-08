@@ -151,27 +151,25 @@ export function ServersHome({
         >
           hango
         </Link>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <Link
             href="/app/friends"
             className="text-sm text-text-muted transition-colors hover:text-text"
           >
             Friends
           </Link>
-          <div className="flex items-center gap-2.5">
-            <Avatar name={displayName} src={avatarUrl} size="sm" />
-            <span className="hidden max-w-[9rem] truncate text-sm text-text-secondary sm:inline">
-              {displayName}
-            </span>
-          </div>
-          {onSignOut && (
+          {onSignOut ? (
             <button
               type="button"
               onClick={() => setSayingBye(true)}
-              className="text-sm text-text-muted transition-colors hover:text-text"
+              title={`Log out · ${displayName}`}
+              aria-label={`Log out of ${displayName}`}
+              className="rounded-full ring-1 ring-transparent transition hover:opacity-90 hover:ring-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-              Log out
+              <Avatar name={displayName} src={avatarUrl} size="sm" />
             </button>
+          ) : (
+            <Avatar name={displayName} src={avatarUrl} size="sm" />
           )}
         </div>
       </header>
