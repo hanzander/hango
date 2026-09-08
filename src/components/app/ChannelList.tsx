@@ -135,23 +135,55 @@ export function ChannelList({
 
   return (
     <aside className="relative z-20 flex min-h-0 flex-1 flex-col overflow-hidden border-r border-border bg-transparent">
-      <div ref={serverMenuRef} className="relative shrink-0 border-b border-border">
+      <div
+        ref={serverMenuRef}
+        className={cn(
+          "relative shrink-0",
+          server.banner_url ? "border-b border-transparent" : "border-b border-border",
+        )}
+      >
         <button
           type="button"
           onClick={() => setServerMenuOpen((o) => !o)}
           className={cn(
-            "flex h-12 w-full items-center gap-2 px-3.5 text-left shadow-sm transition-colors hover:bg-bg-hover",
-            serverMenuOpen && "bg-bg-hover",
+            "relative flex w-full items-end text-left transition-colors",
+            server.banner_url
+              ? "h-[135px] px-3.5 pb-3 pt-10 hover:brightness-[1.03]"
+              : cn(
+                  "h-12 items-center gap-2 px-3.5 shadow-sm hover:bg-bg-hover",
+                  serverMenuOpen && "bg-bg-hover",
+                ),
           )}
           aria-expanded={serverMenuOpen}
           aria-haspopup="menu"
         >
-          <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight text-text">
+          {server.banner_url && (
+            <>
+              <span
+                aria-hidden
+                className="absolute inset-0 bg-cover bg-center"
+                style={{ backgroundImage: `url(${server.banner_url})` }}
+              />
+              <span
+                aria-hidden
+                className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/10"
+              />
+            </>
+          )}
+          <h2
+            className={cn(
+              "relative min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight",
+              server.banner_url
+                ? "text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+                : "text-text",
+            )}
+          >
             {server.name}
           </h2>
           <ChevronIcon
             className={cn(
-              "h-3.5 w-3.5 shrink-0 text-text-muted transition-transform",
+              "relative h-3.5 w-3.5 shrink-0 transition-transform",
+              server.banner_url ? "text-white/90" : "text-text-muted",
               serverMenuOpen && "rotate-180",
             )}
           />
