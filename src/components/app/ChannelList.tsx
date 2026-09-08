@@ -6,6 +6,7 @@ import type { Channel, Server } from "@/lib/types";
 import type { PresenceUser } from "@/hooks/useServerPresence";
 import type { NotificationLevel } from "@/lib/permissions";
 import { Avatar } from "@/components/ui/Avatar";
+import { leaveServerNow } from "@/lib/leave-server";
 import { cn } from "@/lib/utils";
 
 type ChannelListProps = {
@@ -253,17 +254,20 @@ export function ChannelList({
               </>
             )}
             <div className="mx-2 my-2 border-t border-border" />
-            <Link
-              href={homeHref}
+            <button
+              type="button"
               role="menuitem"
-              className="mx-1 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-rose-400 transition hover:bg-rose-500/10"
-              onClick={() => setServerMenuOpen(false)}
+              className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-rose-400 transition hover:bg-rose-500/10"
+              onClick={() => {
+                setServerMenuOpen(false);
+                leaveServerNow(homeHref);
+              }}
             >
               <span className="flex h-4 w-4 items-center justify-center text-xs">
                 ←
               </span>
               Leave server
-            </Link>
+            </button>
           </div>
         )}
       </div>

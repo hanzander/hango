@@ -33,6 +33,7 @@ import type { ServerRole } from "@/lib/types";
 import { useServerPresence } from "@/hooks/useServerPresence";
 import { createClient } from "@/lib/supabase/client";
 import { playJoinSound, playLeaveSound, unlockAudio } from "@/lib/call-sounds";
+import { leaveServerNow } from "@/lib/leave-server";
 import { refreshMediaDevices } from "@/lib/media-devices";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
@@ -297,6 +298,10 @@ export function AppShell({
       channel.id === voiceSession.channelId,
   );
   const homeHref = demo ? "/app/demo" : "/app";
+
+  useEffect(() => {
+    router.prefetch(homeHref);
+  }, [router, homeHref]);
 
   useEffect(() => {
     const unlock = () => unlockAudio();
@@ -784,12 +789,13 @@ export function AppShell({
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
             {isVoice ? channel.name : `#${channel.name}`}
           </span>
-          <Link
-            href={homeHref}
+          <button
+            type="button"
             className="text-[11px] text-text-muted hover:text-text"
+            onClick={() => leaveServerNow(homeHref)}
           >
             Leave
-          </Link>
+          </button>
         </div>
 
         {inCall && voiceSession && !demo && (

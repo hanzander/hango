@@ -38,6 +38,11 @@ import {
   resolveNotificationLevel,
   type NotificationLevel,
 } from "@/lib/permissions";
+import {
+  getAppBootstrapCache,
+  setAppBootstrapCache,
+  setLastChannelId,
+} from "@/lib/app-cache";
 
 type ChatWorkspaceProps = {
   serverId?: string;
@@ -81,31 +86,38 @@ export function ChatWorkspace({
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const configured = isSupabaseConfigured() && !demo;
+  const cachedBoot = configured ? getAppBootstrapCache() : null;
 
   const demoChannelFromQuery = searchParams.get("c") ?? undefined;
 
   const [servers, setServers] = useState<Server[]>(
-    configured ? [] : MOCK_SERVERS,
+    configured ? (cachedBoot?.servers ?? []) : MOCK_SERVERS,
   );
   const [channels, setChannels] = useState<Channel[]>(
-    configured ? [] : MOCK_CHANNELS,
+    configured ? (cachedBoot?.channels ?? []) : MOCK_CHANNELS,
   );
   const [messages, setMessages] = useState<Message[]>([]);
   const [profile, setProfile] = useState<Profile | null>(
-    configured ? null : MOCK_PROFILE,
+    configured ? (cachedBoot?.profile ?? null) : MOCK_PROFILE,
   );
   const [loadingMessages, setLoadingMessages] = useState(true);
-  const [bootstrapped, setBootstrapped] = useState(!configured);
+  const [bootstrapped, setBootstrapped] = useState(
+    !configured || Boolean(cachedBoot),
+  );
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [typingNames, setTypingNames] = useState<string[]>([]);
-  const [mutedChannels, setMutedChannels] = useState<Set<string>>(new Set());
-  const [mutedServers, setMutedServers] = useState<Set<string>>(new Set());
+  const [mutedChannels, setMutedChannels] = useState<Set<string>>(
+    () => new Set(cachedBoot?.mutedChannels ?? []),
+  );
+  const [mutedServers, setMutedServers] = useState<Set<string>>(
+    () => new Set(cachedBoot?.mutedServers ?? []),
+  );
   const [channelNotifLevels, setChannelNotifLevels] = useState<
     Record<string, NotificationLevel>
-  >({});
+  >(() => cachedBoot?.channelNotifLevels ?? {});
   const [serverNotifLevels, setServerNotifLevels] = useState<
     Record<string, NotificationLevel>
-  >({});
+  >(() => cachedBoot?.serverNotifLevels ?? {});
   const [unreadChannels, setUnreadChannels] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [pinsOnly, setPinsOnly] = useState(false);
@@ -229,7 +241,13 @@ export function ChatWorkspace({
     setLoadingMessages(false);
   }, [configured, activeChannel, demoMessages]);
 
-  // Bootstrap
+  // Remember last channel so re-entering the server is instant
+  useEffect(() => {
+    if (!configured || !serverId || !channelId) return;
+    setLastChannelId(serverId, channelId);
+  }, [configured, serverId, channelId]);
+
+  // Bootstrap (hydrate from cache first; refresh in parallel)
   useEffect(() => {
     if (!configured) return;
 
@@ -246,24 +264,20 @@ export function ChatWorkspace({
         return;
       }
 
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
+      // Profile + memberships in parallel
+      const [profileResult, memberResult] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", user.id).single(),
+        supabase.from("server_members").select("server_id"),
+      ]);
 
+      const profileData = profileResult.data;
       if (profileData && !profileData.onboarding_complete) {
         router.replace("/onboarding");
         return;
       }
 
-      const { data: memberRows } = await supabase
-        .from("server_members")
-        .select("server_id");
-
-      const serverIds = (memberRows ?? []).map((m) => m.server_id);
+      const serverIds = (memberResult.data ?? []).map((m) => m.server_id);
       let serverRows: Server[] = [];
-
       if (serverIds.length) {
         const { data } = await supabase
           .from("servers")
@@ -272,42 +286,40 @@ export function ChatWorkspace({
         serverRows = (data as Server[]) ?? [];
       }
 
-      let channelRows: Channel[] = [];
-      if (serverRows.length) {
-        const { data } = await supabase
-          .from("channels")
-          .select("*")
-          .in(
-            "server_id",
-            serverRows.map((s) => s.id),
-          )
-          .order("position");
-        channelRows = (data as Channel[]) ?? [];
-      }
-
-      const { data: channelMuteRows } = await supabase
-        .from("channel_mutes")
-        .select("channel_id, notification_level");
-      const { data: serverMuteRows } = await supabase
-        .from("server_mutes")
-        .select("server_id, notification_level");
-      // Mute tables may not exist until migration 005 — ignore errors
+      const [channelResult, channelMuteResult, serverMuteResult] =
+        await Promise.all([
+          serverRows.length
+            ? supabase
+                .from("channels")
+                .select("*")
+                .in(
+                  "server_id",
+                  serverRows.map((s) => s.id),
+                )
+                .order("position")
+            : Promise.resolve({ data: [] as Channel[] | null }),
+          supabase
+            .from("channel_mutes")
+            .select("channel_id, notification_level"),
+          supabase
+            .from("server_mutes")
+            .select("server_id, notification_level"),
+        ]);
 
       if (cancelled) return;
 
-      setProfile(
-        (profileData as Profile) ?? {
+      const channelRows = (channelResult.data as Channel[]) ?? [];
+      const nextProfile =
+        (profileData as Profile) ??
+        ({
           id: user.id,
           display_name: user.email?.split("@")[0] ?? "User",
           avatar_url: null,
-        },
-      );
-      setServers(serverRows);
-      setChannels(channelRows);
+        } as Profile);
 
       const chLevels: Record<string, NotificationLevel> = {};
       const chMuted = new Set<string>();
-      for (const row of channelMuteRows ?? []) {
+      for (const row of channelMuteResult.data ?? []) {
         const id = row.channel_id as string;
         const level = isNotificationLevel(row.notification_level)
           ? row.notification_level
@@ -317,7 +329,7 @@ export function ChatWorkspace({
       }
       const srvLevels: Record<string, NotificationLevel> = {};
       const srvMuted = new Set<string>();
-      for (const row of serverMuteRows ?? []) {
+      for (const row of serverMuteResult.data ?? []) {
         const id = row.server_id as string;
         const level = isNotificationLevel(row.notification_level)
           ? row.notification_level
@@ -325,10 +337,25 @@ export function ChatWorkspace({
         srvLevels[id] = level;
         if (level === "nothing") srvMuted.add(id);
       }
+
+      setProfile(nextProfile);
+      setServers(serverRows);
+      setChannels(channelRows);
       setChannelNotifLevels(chLevels);
       setServerNotifLevels(srvLevels);
       setMutedChannels(chMuted);
       setMutedServers(srvMuted);
+      setAppBootstrapCache({
+        userId: user.id,
+        profile: nextProfile,
+        servers: serverRows,
+        channels: channelRows,
+        channelNotifLevels: chLevels,
+        serverNotifLevels: srvLevels,
+        mutedChannels: [...chMuted],
+        mutedServers: [...srvMuted],
+        savedAt: Date.now(),
+      });
       setBootstrapped(true);
     }
 

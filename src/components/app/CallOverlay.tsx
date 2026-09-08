@@ -940,12 +940,17 @@ export function CallOverlay({
       } catch {
         /* ignore */
       }
-      void room.disconnect();
-      room.removeAllListeners();
+      // Defer disconnect so Leave → servers home can paint first
+      const closing = room;
+      const host = audioHost;
       roomRef.current = null;
       setRoom(null);
       audioHostRef.current = null;
-      audioHost.remove();
+      window.setTimeout(() => {
+        void closing.disconnect();
+        closing.removeAllListeners();
+        host.remove();
+      }, 0);
     };
   }, [channelId, schedulePeers]);
 

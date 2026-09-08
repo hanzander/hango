@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Server } from "@/lib/types";
+import { getServerEnterHref } from "@/lib/app-cache";
 import { cn, initials } from "@/lib/utils";
 
 type ServerRailProps = {
@@ -14,7 +15,7 @@ type ServerRailProps = {
 export function ServerRail({
   servers,
   activeServerId,
-  hrefForServer = (server) => `/app/${server.id}`,
+  hrefForServer = (server) => getServerEnterHref(server.id),
   onAddServer,
 }: ServerRailProps) {
   return (
