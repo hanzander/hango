@@ -247,8 +247,7 @@ export function ServersHome({
         <p className="mt-3 max-w-md text-sm leading-relaxed text-text-secondary">
           Pick a space to{" "}
           <span className="text-text">hango</span>
-          <span className="text-text-secondary">ut</span>. Come back here anytime
-          to switch.
+          <span className="text-text-secondary">ut</span>.
         </p>
 
         {error && (
