@@ -302,7 +302,7 @@ export function ServersHome({
                 </Link>
 
                 {isOwner && (
-                  <div className="absolute right-2 top-1/2 z-10 -translate-y-1/2">
+                  <div className="absolute right-2 top-1/2 z-20 -translate-y-1/2">
                     <button
                       type="button"
                       title="Server options"
@@ -321,7 +321,7 @@ export function ServersHome({
                       <div
                         ref={menuRef}
                         role="menu"
-                        className="hango-anim-pop absolute right-0 top-[calc(100%+4px)] w-40 overflow-hidden rounded-xl border border-border-strong bg-[#161412] py-1 shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
+                        className="hango-anim-pop absolute right-0 top-[calc(100%+4px)] z-50 w-40 overflow-hidden rounded-xl border border-border-strong bg-[#161412] py-1 shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
                       >
                         <button
                           type="button"
