@@ -20,17 +20,44 @@ export const metadata: Metadata = {
   description: "Clean, minimal chat for people who hang out.",
 };
 
+function livekitPreconnectOrigin() {
+  const raw = process.env.NEXT_PUBLIC_LIVEKIT_URL;
+  if (!raw) return null;
+  try {
+    const normalized = raw
+      .replace(/^wss:/i, "https:")
+      .replace(/^ws:/i, "http:");
+    return new URL(normalized).origin;
+  } catch {
+    return null;
+  }
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const livekitOrigin = livekitPreconnectOrigin();
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
       suppressHydrationWarning
     >
+      <head>
+        {livekitOrigin ? (
+          <>
+            <link rel="dns-prefetch" href={livekitOrigin} />
+            <link
+              rel="preconnect"
+              href={livekitOrigin}
+              crossOrigin="anonymous"
+            />
+          </>
+        ) : null}
+      </head>
       <body className="min-h-full bg-bg font-sans text-text antialiased">
         <AppearanceProvider>
           <AuthCoverClearer />

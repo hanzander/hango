@@ -89,14 +89,16 @@ async function enableMicrophone(room: Room, deviceId?: string) {
     getStickyDevice("audioinput") ||
     room.getActiveDevice("audioinput") ||
     undefined;
+  // Fast path first: sticky device / bare enable usually works; heavy opts as fallback.
   const attempts: (MediaTrackConstraints | undefined)[] = [
-    micCaptureOpts(preferred || undefined),
     preferred ? { deviceId: preferred } : undefined,
-    micCaptureOpts(),
     {},
+    micCaptureOpts(preferred || undefined),
+    preferred ? micCaptureOpts() : undefined,
   ];
   let lastErr: unknown;
   for (const opts of attempts) {
+    if (opts === undefined && preferred) continue;
     try {
       if (opts === undefined) {
         await room.localParticipant.setMicrophoneEnabled(true);
@@ -116,7 +118,7 @@ async function enableMicrophone(room: Room, deviceId?: string) {
 async function enableMicrophoneWithRetry(
   room: Room,
   deviceId?: string,
-  tries = 3,
+  tries = 2,
 ) {
   let lastErr: unknown;
   for (let i = 0; i < tries; i++) {
@@ -128,7 +130,9 @@ async function enableMicrophoneWithRetry(
       return;
     } catch (err) {
       lastErr = err;
-      await new Promise((r) => setTimeout(r, 180 * (i + 1)));
+      if (i < tries - 1) {
+        await new Promise((r) => setTimeout(r, 100 * (i + 1)));
+      }
     }
   }
   throw lastErr;
@@ -223,6 +227,8 @@ export function CallOverlay({
   const [noiseSuppression, setNoiseSuppressionState] = useState(false);
   const { toast } = useToast();
   const wasReconnecting = useRef(false);
+  const displayNameRef = useRef(displayName);
+  displayNameRef.current = displayName;
 
   useEffect(() => {
     setNoiseSuppressionState(getNoiseSuppression());
@@ -421,34 +427,35 @@ export function CallOverlay({
     async function start() {
       setStatus("connecting");
       setError(null);
+      void warmDeviceCache();
+      void refreshMediaDevices("audioinput");
       try {
         const res = await fetch("/api/livekit/token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ channelId, displayName }),
+          body: JSON.stringify({
+            channelId,
+            displayName: displayNameRef.current,
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to join call");
         if (cancelled) return;
 
         await room.connect(data.url, data.token, {
-          // Auto-subscribe audio; skip unused video until someone publishes
           autoSubscribe: true,
         });
         if (cancelled) return;
 
         attachExistingRemoteAudio();
 
-        // Browser autoplay policy — required to hear remote participants
-        try {
-          await room.startAudio();
-          setAudioBlocked(!room.canPlaybackAudio);
-        } catch {
-          setAudioBlocked(true);
-        }
+        const audioReady = room.startAudio().then(
+          () => setAudioBlocked(!room.canPlaybackAudio),
+          () => setAudioBlocked(true),
+        );
 
-        // Yield so Chrome can paint before getUserMedia (avoids "Page Unresponsive")
-        await new Promise<void>((r) => setTimeout(r, 120));
+        // One paint frame before getUserMedia (avoids Chrome "Page Unresponsive")
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
         if (cancelled) return;
 
         try {
@@ -458,18 +465,15 @@ export function CallOverlay({
           setNeedsMicAllow(false);
           setDeviceHint(null);
           setMicHelpSteps([]);
-          void warmDeviceCache();
         } catch (micErr) {
-          // Permission already granted but device briefly busy → one more soft retry
           try {
-            await new Promise((r) => setTimeout(r, 350));
+            await new Promise((r) => setTimeout(r, 120));
             if (cancelled) return;
             await enableMicrophoneWithRetry(room, undefined, 2);
             setMicOn(true);
             setNeedsMicAllow(false);
             setDeviceHint(null);
             setMicHelpSteps([]);
-            void warmDeviceCache();
           } catch {
             setDeviceHint(friendlyDeviceError(micErr, "microphone"));
             setMicOn(false);
@@ -480,9 +484,9 @@ export function CallOverlay({
               "If it says blocked: address bar lock → Microphone → Allow, then reload",
               "Windows: Settings → Privacy → Microphone must be on for your browser",
             ]);
-            void warmDeviceCache();
           }
         }
+        await audioReady;
         schedulePeers();
       } catch (err) {
         if (cancelled) return;
@@ -517,7 +521,7 @@ export function CallOverlay({
       audioHostRef.current = null;
       audioHost.remove();
     };
-  }, [channelId, displayName, schedulePeers]);
+  }, [channelId, schedulePeers]);
 
   function applyDeafenedToAudio(muted: boolean) {
     const host = audioHostRef.current;

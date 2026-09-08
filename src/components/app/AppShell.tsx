@@ -299,6 +299,27 @@ export function AppShell({
   const closeMobile = useCallback(() => setSidebarOpen(false), []);
 
   useEffect(() => {
+    if (demo) return;
+    // Prefetch LiveKit chunk early so first join isn’t waiting on download
+    const run = () => {
+      void import("./CallOverlay");
+    };
+    const w = window as Window & {
+      requestIdleCallback?: (
+        cb: () => void,
+        opts?: { timeout: number },
+      ) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof w.requestIdleCallback === "function") {
+      const id = w.requestIdleCallback(run, { timeout: 2500 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(run, 1200);
+    return () => window.clearTimeout(t);
+  }, [demo]);
+
+  useEffect(() => {
     if (!isVoice || demo) return;
     void import("./CallOverlay");
   }, [isVoice, demo]);
@@ -385,7 +406,8 @@ export function AppShell({
 
       unlockAudio();
       playJoinSound();
-      // Mic is enabled inside CallOverlay after the room connects.
+      // Kick chunk + device list on the same gesture as join
+      void import("./CallOverlay");
       void refreshMediaDevices("audioinput");
       void refreshMediaDevices("audiooutput");
       setCallConnected(false);

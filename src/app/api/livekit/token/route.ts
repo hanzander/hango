@@ -38,13 +38,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: channel, error: channelError } = await supabase
-    .from("channels")
-    .select("id, server_id, name")
-    .eq("id", channelId)
-    .single();
+  // Channel + profile in parallel (membership needs server_id from channel)
+  const [channelResult, profileResult] = await Promise.all([
+    supabase
+      .from("channels")
+      .select("id, server_id, name")
+      .eq("id", channelId)
+      .single(),
+    supabase
+      .from("profiles")
+      .select("display_name, username")
+      .eq("id", user.id)
+      .single(),
+  ]);
 
-  if (channelError || !channel) {
+  const channel = channelResult.data;
+  if (channelResult.error || !channel) {
     return NextResponse.json({ error: "Channel not found" }, { status: 404 });
   }
 
@@ -59,12 +68,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not a server member" }, { status: 403 });
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, username")
-    .eq("id", user.id)
-    .single();
-
+  const profile = profileResult.data;
   const identity = user.id;
   const name =
     body.displayName?.trim() ||
@@ -91,7 +95,6 @@ export async function POST(request: Request) {
 
   const token = await at.toJwt();
 
-  // Client expects a WebSocket URL (wss://…)
   const wsUrl = url.startsWith("ws")
     ? url
     : url.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
