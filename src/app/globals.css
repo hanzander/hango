@@ -363,7 +363,7 @@ html.hango-auth-covering {
 @keyframes hango-servers-in {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -374,11 +374,22 @@ html.hango-auth-covering {
 @keyframes hango-server-card {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes hango-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -394,12 +405,16 @@ html.hango-auth-covering {
   animation: hango-moment-dot 1.2s ease-in-out infinite;
 }
 
+.hango-view-in {
+  animation: hango-view-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 .hango-servers-in {
-  animation: none;
+  animation: hango-servers-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .hango-server-card {
-  animation: none;
+  animation: hango-server-card 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -429,7 +444,8 @@ html.hango-auth-covering {
   .hango-moment-copy,
   .hango-moment-dot,
   .hango-servers-in,
-  .hango-server-card {
+  .hango-server-card,
+  .hango-view-in {
     animation: none !important;
   }
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { Server } from "@/lib/types";
 import { getServerEnterHref } from "@/lib/app-cache";
+import { enterServerNow, leaveServerNow } from "@/lib/leave-server";
 import { cn, initials } from "@/lib/utils";
 
 type ServerRailProps = {
@@ -20,22 +21,32 @@ export function ServerRail({
 }: ServerRailProps) {
   return (
     <aside className="hango-rail-wash flex h-full w-[68px] shrink-0 flex-col items-center gap-2 border-r border-border py-3">
-      <Link
-        href="/"
+      <button
+        type="button"
+        onClick={() => leaveServerNow()}
         className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-sm font-semibold tracking-tight text-accent-fg transition-all hover:rounded-xl"
-        title="Hango home"
+        title="Your servers"
       >
         H
-      </Link>
+      </button>
       <div className="h-px w-8 bg-border-strong" />
       <div className="hango-scroll flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto px-2">
         {servers.map((server) => {
           const active = server.id === activeServerId;
+          const href = hrefForServer(server);
           return (
             <Link
               key={server.id}
-              href={hrefForServer(server)}
+              href={href}
               title={server.name}
+              onClick={(e) => {
+                if (server.id === activeServerId) {
+                  e.preventDefault();
+                  return;
+                }
+                e.preventDefault();
+                enterServerNow(href);
+              }}
               className="group relative flex w-full justify-center"
             >
               <span

@@ -8,7 +8,11 @@ import { getAppBootstrapCache, setAppBootstrapCache } from "@/lib/app-cache";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/utils";
 import type { Server } from "@/lib/types";
-import { LEAVE_SERVER_EVENT } from "@/lib/leave-server";
+import {
+  ENTER_SERVER_EVENT,
+  LEAVE_SERVER_EVENT,
+  parseServerHref,
+} from "@/lib/leave-server";
 
 type HomeState = {
   displayName: string;
@@ -16,6 +20,8 @@ type HomeState = {
   userId: string;
   servers: Server[];
 };
+
+type EnterTarget = { serverId: string; channelId: string };
 
 function homeFromCache(): HomeState | null {
   const cache = getAppBootstrapCache();
@@ -30,7 +36,6 @@ function homeFromCache(): HomeState | null {
 
 function parseAppPath(pathname: string) {
   const parts = pathname.split("/").filter(Boolean);
-  // ["app", ...]
   if (parts[0] !== "app") {
     return { kind: "other" as const };
   }
@@ -47,57 +52,97 @@ function parseAppPath(pathname: string) {
 }
 
 /**
- * Keeps server UI / home under one client shell so “Leave server” can paint
- * the selection screen in the same frame — no waiting on RSC navigation.
+ * Keeps server UI / home under one client shell so leave & enter paint
+ * in the same frame — URL catch-up happens after.
  */
 export function AppRouteShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const parsed = parseAppPath(pathname);
   const [leaving, setLeaving] = useState(false);
+  const [entering, setEntering] = useState<EnterTarget | null>(null);
+  const [viewAnim, setViewAnim] = useState(0);
 
   useEffect(() => {
-    if (parsed.kind === "home") setLeaving(false);
+    if (parsed.kind === "home") {
+      setLeaving(false);
+      setEntering(null);
+    }
   }, [parsed.kind]);
+
+  useEffect(() => {
+    if (
+      entering &&
+      parsed.kind === "server" &&
+      parsed.serverId === entering.serverId &&
+      parsed.channelId === entering.channelId
+    ) {
+      setEntering(null);
+    }
+  }, [parsed, entering]);
 
   useEffect(() => {
     function onLeave(event: Event) {
       const href =
         (event as CustomEvent<{ href?: string }>).detail?.href ?? "/app";
-      // Paint home immediately; URL catch-up happens after.
       if (href === "/app" || href === "/app/") {
+        setEntering(null);
         setLeaving(true);
+        setViewAnim((n) => n + 1);
       }
       router.replace(href);
     }
+
+    function onEnter(event: Event) {
+      const href = (event as CustomEvent<{ href?: string }>).detail?.href;
+      if (!href) return;
+      const target = parseServerHref(href);
+      if (!target?.serverId || !target.channelId) {
+        router.push(href);
+        return;
+      }
+      setLeaving(false);
+      setEntering({
+        serverId: target.serverId,
+        channelId: target.channelId,
+      });
+      setViewAnim((n) => n + 1);
+      router.push(href);
+    }
+
     window.addEventListener(LEAVE_SERVER_EVENT, onLeave);
-    return () => window.removeEventListener(LEAVE_SERVER_EVENT, onLeave);
+    window.addEventListener(ENTER_SERVER_EVENT, onEnter);
+    return () => {
+      window.removeEventListener(LEAVE_SERVER_EVENT, onLeave);
+      window.removeEventListener(ENTER_SERVER_EVENT, onEnter);
+    };
   }, [router]);
 
-  const showHome = leaving || parsed.kind === "home";
+  const showHome = (leaving || parsed.kind === "home") && !entering;
+  const workspaceServerId = entering?.serverId
+    ?? (parsed.kind === "server" ? parsed.serverId : undefined);
+  const workspaceChannelId = entering?.channelId
+    ?? (parsed.kind === "server" ? parsed.channelId : undefined);
   const showWorkspace =
-    !showHome &&
-    parsed.kind === "server" &&
-    Boolean(parsed.channelId);
+    !showHome && Boolean(workspaceServerId && workspaceChannelId);
 
   return (
     <>
-      {showHome && <InstantServersHome active={showHome} />}
-      {showWorkspace && parsed.kind === "server" && (
-        <Suspense
-          fallback={
-            <div className="flex h-dvh items-center justify-center bg-bg text-sm text-text-muted">
-              Loading Hango…
-            </div>
-          }
-        >
-          <ChatWorkspace
-            serverId={parsed.serverId}
-            channelId={parsed.channelId}
-          />
-        </Suspense>
+      {showHome && (
+        <div key={`home-${viewAnim}`} className="hango-view-in">
+          <InstantServersHome active={showHome} />
+        </div>
       )}
-      {/* demo / friends / dm / bare /app/[serverId] entry redirect */}
+      {showWorkspace && workspaceServerId && workspaceChannelId && (
+        <div key={`srv-${workspaceServerId}-${viewAnim}`} className="hango-view-in">
+          <Suspense fallback={<div className="h-dvh bg-bg" />}>
+            <ChatWorkspace
+              serverId={workspaceServerId}
+              channelId={workspaceChannelId}
+            />
+          </Suspense>
+        </div>
+      )}
       {!showHome && !showWorkspace && children}
       {showWorkspace && (
         <div className="hidden" aria-hidden>

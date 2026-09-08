@@ -1,11 +1,10 @@
 "use client";
 
 import { ServerActionsModal } from "@/components/app/ServerActionsModal";
-import { useRouter } from "next/navigation";
+import { enterServerNow } from "@/lib/leave-server";
 import { useState } from "react";
 
 export function EmptyServersHome({ displayName }: { displayName: string }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   return (
@@ -33,8 +32,7 @@ export function EmptyServersHome({ displayName }: { displayName: string }) {
         open={open}
         onClose={() => setOpen(false)}
         onJoined={(serverId) => {
-          router.push(`/app/${serverId}`);
-          router.refresh();
+          enterServerNow(serverId);
         }}
       />
     </div>

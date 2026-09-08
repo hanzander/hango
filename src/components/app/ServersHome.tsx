@@ -17,6 +17,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { AuthMoment } from "@/components/auth/AuthMoment";
 import { armAuthCover } from "@/lib/auth-cover";
 import { getServerEnterHref } from "@/lib/app-cache";
+import { enterServerNow } from "@/lib/leave-server";
 
 type ServersHomeProps = {
   displayName: string;
@@ -196,16 +197,21 @@ export function ServersHome({
         )}
 
         <div className="mt-10 grid gap-3 sm:grid-cols-2">
-          {servers.map((server) => {
+          {servers.map((server, i) => {
             const isOwner = server.owner_id === userId;
             return (
               <div
                 key={server.id}
                 className="hango-server-card relative"
+                style={{ animationDelay: `${30 + i * 35}ms` }}
               >
                 <Link
                   href={getServerEnterHref(server.id)}
                   prefetch
+                  onClick={(e) => {
+                    e.preventDefault();
+                    enterServerNow(getServerEnterHref(server.id));
+                  }}
                   className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-border-strong bg-[#141312]/90 p-4 pr-12 transition-all duration-200 hover:-translate-y-0.5 hover:border-text-muted hover:bg-bg-subtle"
                 >
                   <span
@@ -343,8 +349,7 @@ export function ServersHome({
         open={open}
         onClose={() => setOpen(false)}
         onJoined={(serverId) => {
-          router.push(`/app/${serverId}`);
-          router.refresh();
+          enterServerNow(serverId);
         }}
       />
     </div>
