@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -54,6 +55,10 @@ type CallOverlayProps = {
   channelId: string;
   channelName: string;
   displayName: string;
+  /** Local user's profile image */
+  avatarUrl?: string | null;
+  /** userId → avatar_url from server members / presence */
+  avatarByUserId?: Record<string, string | null>;
   onLeave: () => void;
   onConnected?: () => void;
   onDisconnected?: () => void;
@@ -72,6 +77,7 @@ type CallOverlayProps = {
 type PeerSnapshot = {
   identity: string;
   name: string;
+  avatarUrl: string | null;
   isLocal: boolean;
   micOn: boolean;
   camOn: boolean;
@@ -140,10 +146,24 @@ async function enableMicrophoneWithRetry(
 
 const CONNECTING_HINT = "Still connecting — try again in a moment.";
 
-function localPlaceholder(displayName: string): PeerSnapshot {
+function parseAvatarMeta(metadata: string | undefined): string | null {
+  if (!metadata) return null;
+  try {
+    const data = JSON.parse(metadata) as { avatar_url?: string | null };
+    return data.avatar_url || null;
+  } catch {
+    return null;
+  }
+}
+
+function localPlaceholder(
+  displayName: string,
+  avatarUrl: string | null = null,
+): PeerSnapshot {
   return {
     identity: "__local__",
     name: displayName,
+    avatarUrl,
     isLocal: true,
     micOn: false,
     camOn: false,
@@ -151,19 +171,30 @@ function localPlaceholder(displayName: string): PeerSnapshot {
   };
 }
 
-function snapshotPeers(room: Room): PeerSnapshot[] {
+function snapshotPeers(
+  room: Room,
+  avatarByUserId?: Record<string, string | null>,
+  localAvatarUrl?: string | null,
+): PeerSnapshot[] {
   const all: Participant[] = [
     room.localParticipant,
     ...Array.from(room.remoteParticipants.values()),
   ];
-  return all.map((p) => ({
-    identity: p.identity,
-    name: p.name || p.identity.slice(0, 8),
-    isLocal: p.isLocal,
-    micOn: p.isMicrophoneEnabled,
-    camOn: p.isCameraEnabled,
-    screenOn: p.isScreenShareEnabled,
-  }));
+  return all.map((p) => {
+    const fromMeta = parseAvatarMeta(p.metadata);
+    const fromMap = avatarByUserId?.[p.identity] ?? null;
+    const avatarUrl =
+      fromMeta || fromMap || (p.isLocal ? localAvatarUrl || null : null);
+    return {
+      identity: p.identity,
+      name: p.name || p.identity.slice(0, 8),
+      avatarUrl,
+      isLocal: p.isLocal,
+      micOn: p.isMicrophoneEnabled,
+      camOn: p.isCameraEnabled,
+      screenOn: p.isScreenShareEnabled,
+    };
+  });
 }
 
 function peersEqual(a: PeerSnapshot[], b: PeerSnapshot[]) {
@@ -174,6 +205,7 @@ function peersEqual(a: PeerSnapshot[], b: PeerSnapshot[]) {
     if (
       x.identity !== y.identity ||
       x.name !== y.name ||
+      x.avatarUrl !== y.avatarUrl ||
       x.micOn !== y.micOn ||
       x.camOn !== y.camOn ||
       x.screenOn !== y.screenOn
@@ -191,6 +223,8 @@ export function CallOverlay({
   channelId,
   channelName,
   displayName,
+  avatarUrl = null,
+  avatarByUserId,
   onLeave,
   onConnected,
   onDisconnected,
@@ -204,7 +238,7 @@ export function CallOverlay({
   >("connecting");
   const [error, setError] = useState<string | null>(null);
   const [peers, setPeers] = useState<PeerSnapshot[]>(() => [
-    localPlaceholder(displayName),
+    localPlaceholder(displayName, avatarUrl),
   ]);
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
@@ -225,10 +259,18 @@ export function CallOverlay({
   const [boardOpen, setBoardOpen] = useState(false);
   const [boardReady, setBoardReady] = useState(true);
   const [noiseSuppression, setNoiseSuppressionState] = useState(false);
+  const [focusedIdentity, setFocusedIdentity] = useState<string | null>(null);
+  const [stageFullscreen, setStageFullscreen] = useState(false);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const prevScreenIds = useRef<Set<string>>(new Set());
   const { toast } = useToast();
   const wasReconnecting = useRef(false);
   const displayNameRef = useRef(displayName);
   displayNameRef.current = displayName;
+  const avatarUrlRef = useRef(avatarUrl);
+  avatarUrlRef.current = avatarUrl;
+  const avatarByUserIdRef = useRef(avatarByUserId);
+  avatarByUserIdRef.current = avatarByUserId;
 
   useEffect(() => {
     setNoiseSuppressionState(getNoiseSuppression());
@@ -261,7 +303,11 @@ export function CallOverlay({
       peerTimer.current = null;
       const room = roomRef.current;
       if (!room) return;
-      const next = snapshotPeers(room);
+      const next = snapshotPeers(
+        room,
+        avatarByUserIdRef.current,
+        avatarUrlRef.current,
+      );
       setPeers((prev) => (peersEqual(prev, next) ? prev : next));
       const mic = room.localParticipant.isMicrophoneEnabled;
       const cam = room.localParticipant.isCameraEnabled;
@@ -276,6 +322,11 @@ export function CallOverlay({
       );
     }, 80);
   }, []);
+
+  // Refresh tiles when member avatars load after join
+  useEffect(() => {
+    schedulePeers();
+  }, [avatarByUserId, avatarUrl, schedulePeers]);
 
   useEffect(() => {
     let cancelled = false;
@@ -849,7 +900,57 @@ export function CallOverlay({
     }
   }
 
+  useEffect(() => {
+    const screenIds = new Set(
+      peers.filter((p) => p.screenOn).map((p) => p.identity),
+    );
+    const prev = prevScreenIds.current;
+    for (const id of screenIds) {
+      if (!prev.has(id)) setFocusedIdentity(id);
+    }
+    if (focusedIdentity && !peers.some((p) => p.identity === focusedIdentity)) {
+      setFocusedIdentity(
+        peers.find((p) => p.screenOn)?.identity ?? peers[0]?.identity ?? null,
+      );
+    }
+    if (screenIds.size === 0 && focusedIdentity) {
+      setFocusedIdentity(null);
+    }
+    prevScreenIds.current = screenIds;
+  }, [peers, focusedIdentity]);
+
+  useEffect(() => {
+    function onFsChange() {
+      const el = stageRef.current;
+      setStageFullscreen(Boolean(el && document.fullscreenElement === el));
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  async function toggleStageFullscreen() {
+    const el = stageRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement === el) {
+        await document.exitFullscreen();
+      } else {
+        await el.requestFullscreen();
+      }
+    } catch {
+      /* browser blocked */
+    }
+  }
+
   const live = status === "live";
+  const focusedPeer =
+    focusedIdentity != null
+      ? peers.find((p) => p.identity === focusedIdentity) ?? null
+      : peers.find((p) => p.screenOn) ?? null;
+  const stageMode = Boolean(focusedPeer?.screenOn);
+  const stripPeers = stageMode
+    ? peers.filter((p) => p.identity !== focusedPeer!.identity)
+    : peers;
   const n = Math.max(peers.length, 1);
   const gridClass =
     n === 1
@@ -893,6 +994,7 @@ export function CallOverlay({
 
   if (variant === "pip") {
     const focus =
+      peers.find((p) => p.screenOn) ||
       peers.find((p) => !p.isLocal && p.camOn) ||
       peers.find((p) => p.isLocal) ||
       peers[0];
@@ -955,7 +1057,12 @@ export function CallOverlay({
                     className="rounded-full ring-2 ring-black"
                     title={p.name}
                   >
-                    <Avatar name={p.name} size="sm" className="!h-6 !w-6 !text-[9px]" />
+                    <Avatar
+                      name={p.name}
+                      src={p.avatarUrl}
+                      size="sm"
+                      className="!h-6 !w-6 !text-[9px]"
+                    />
                   </div>
                 ))}
               </div>
@@ -1109,25 +1216,112 @@ export function CallOverlay({
         </div>
       )}
 
-      <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4 pb-32">
-        <div className={cn("grid w-full gap-3", gridClass)}>
-          {[...peers]
-            .sort((a, b) => Number(b.screenOn) - Number(a.screenOn))
-            .map((p) => (
-            <PeerTile
-              key={p.identity}
-              peer={p}
-              room={room}
-              speaking={speakingIds.includes(p.identity)}
-              volume={peerVolumes[p.identity] ?? 1}
-              onVolumeChange={
-                p.isLocal
-                  ? undefined
-                  : (v) => handlePeerVolume(p.identity, v)
-              }
-            />
-          ))}
-        </div>
+      <div
+        ref={stageRef}
+        className={cn(
+          "relative z-10 flex min-h-0 flex-1 overflow-hidden p-4 pb-32",
+          stageFullscreen && "bg-black",
+        )}
+      >
+        {stageMode && focusedPeer ? (
+          <div className="flex min-h-0 w-full flex-1 flex-col gap-3 lg:flex-row">
+            <div className="relative min-h-[40vh] min-w-0 flex-1 lg:min-h-0">
+              <PeerTile
+                peer={focusedPeer}
+                room={room}
+                expanded
+                speaking={speakingIds.includes(focusedPeer.identity)}
+                volume={peerVolumes[focusedPeer.identity] ?? 1}
+                onVolumeChange={
+                  focusedPeer.isLocal
+                    ? undefined
+                    : (v) => handlePeerVolume(focusedPeer.identity, v)
+                }
+                onFocusToggle={() => setFocusedIdentity(null)}
+                onFullscreen={() => void toggleStageFullscreen()}
+                isFocused
+                isFullscreen={stageFullscreen}
+              />
+            </div>
+            {stripPeers.length > 0 && (
+              <div className="flex shrink-0 gap-2 overflow-x-auto lg:w-44 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden">
+                {stripPeers.map((p) => (
+                  <div
+                    key={p.identity}
+                    role={p.screenOn ? "button" : undefined}
+                    tabIndex={p.screenOn ? 0 : undefined}
+                    className={cn(
+                      "relative h-24 w-36 shrink-0 overflow-hidden rounded-xl ring-1 ring-white/10 lg:h-28 lg:w-full",
+                      p.screenOn && "cursor-pointer",
+                    )}
+                    onClick={() => {
+                      if (p.screenOn) setFocusedIdentity(p.identity);
+                    }}
+                    onKeyDown={(e) => {
+                      if (p.screenOn && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        setFocusedIdentity(p.identity);
+                      }
+                    }}
+                    title={
+                      p.screenOn ? `Focus ${p.name}'s screen` : p.name
+                    }
+                  >
+                    <PeerTile
+                      peer={p}
+                      room={room}
+                      compact
+                      speaking={speakingIds.includes(p.identity)}
+                      volume={peerVolumes[p.identity] ?? 1}
+                      onVolumeChange={
+                        p.isLocal
+                          ? undefined
+                          : (v) => handlePeerVolume(p.identity, v)
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            className={cn(
+              "m-auto grid w-full gap-3 self-center",
+              gridClass,
+            )}
+          >
+            {[...peers]
+              .sort((a, b) => Number(b.screenOn) - Number(a.screenOn))
+              .map((p) => (
+                <PeerTile
+                  key={p.identity}
+                  peer={p}
+                  room={room}
+                  speaking={speakingIds.includes(p.identity)}
+                  volume={peerVolumes[p.identity] ?? 1}
+                  onVolumeChange={
+                    p.isLocal
+                      ? undefined
+                      : (v) => handlePeerVolume(p.identity, v)
+                  }
+                  onFocusToggle={
+                    p.screenOn
+                      ? () => setFocusedIdentity(p.identity)
+                      : undefined
+                  }
+                  onFullscreen={
+                    p.screenOn
+                      ? () => {
+                          setFocusedIdentity(p.identity);
+                          void toggleStageFullscreen();
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+          </div>
+        )}
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center pb-6">
@@ -1294,23 +1488,40 @@ const PeerTile = function PeerTile({
   peer,
   room,
   compact,
+  expanded,
   speaking,
   volume = 1,
   onVolumeChange,
+  onFocusToggle,
+  onFullscreen,
+  isFocused,
+  isFullscreen,
 }: {
   peer: PeerSnapshot;
   room: Room | null;
   compact?: boolean;
+  expanded?: boolean;
   speaking?: boolean;
   volume?: number;
   onVolumeChange?: (volume: number) => void;
+  onFocusToggle?: () => void;
+  onFullscreen?: () => void;
+  isFocused?: boolean;
+  isFullscreen?: boolean;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const screenRef = useRef<HTMLVideoElement>(null);
+  const camRef = useRef<HTMLVideoElement>(null);
+  const [volOpen, setVolOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(
+    null,
+  );
 
   useEffect(() => {
-    const el = videoRef.current;
-    if (!el || !room || (!peer.camOn && !peer.screenOn)) {
-      if (el) el.srcObject = null;
+    const screenEl = screenRef.current;
+    const camEl = camRef.current;
+    if (!room || (!peer.camOn && !peer.screenOn)) {
+      if (screenEl) screenEl.srcObject = null;
+      if (camEl) camEl.srcObject = null;
       return;
     }
 
@@ -1327,16 +1538,49 @@ const PeerTile = function PeerTile({
     const camPub = pubs.find(
       (pub) => pub.source === Track.Source.Camera && pub.track && !pub.isMuted,
     );
-    const usePub = screenPub || camPub;
-    if (!usePub?.track) return;
 
-    usePub.track.attach(el);
+    const cleanups: Array<() => void> = [];
+
+    if (screenEl && screenPub?.track) {
+      screenPub.track.attach(screenEl);
+      cleanups.push(() => screenPub.track?.detach(screenEl));
+    } else if (screenEl) {
+      screenEl.srcObject = null;
+    }
+
+    // Keep webcam visible even while screen sharing (PiP bubble)
+    if (camEl && camPub?.track) {
+      camPub.track.attach(camEl);
+      cleanups.push(() => camPub.track?.detach(camEl));
+    } else if (camEl) {
+      camEl.srcObject = null;
+    }
+
     return () => {
-      usePub.track?.detach(el);
+      cleanups.forEach((fn) => fn());
     };
   }, [peer.camOn, peer.screenOn, peer.identity, peer.isLocal, room]);
 
-  const showVideo = peer.camOn || peer.screenOn;
+  useEffect(() => {
+    if (!volOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setVolOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [volOpen]);
+
+  function openVolumeMenu(e: ReactMouseEvent) {
+    if (!onVolumeChange || peer.isLocal) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setMenuPos({ x: e.clientX, y: e.clientY });
+    setVolOpen(true);
+  }
+
+  const showScreen = peer.screenOn;
+  const showCam = peer.camOn;
+  const showVideo = showScreen || showCam;
 
   return (
     <div
@@ -1344,25 +1588,54 @@ const PeerTile = function PeerTile({
         "relative overflow-hidden bg-[#0c0c0c] transition-[box-shadow] duration-150",
         compact
           ? "h-full w-full"
-          : "aspect-video rounded-2xl ring-1 ring-white/5",
+          : expanded
+            ? "h-full w-full rounded-2xl ring-1 ring-white/5"
+            : "aspect-video rounded-2xl ring-1 ring-white/5",
+        onVolumeChange && !peer.isLocal && "cursor-pointer",
         speaking &&
           (compact
             ? "shadow-[inset_0_0_0_3px_rgba(52,211,153,0.95)]"
             : "ring-2 ring-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]"),
       )}
+      onClick={compact ? undefined : openVolumeMenu}
+      onContextMenu={openVolumeMenu}
     >
       {showVideo ? (
-        <video
-          ref={videoRef}
-          className="h-full w-full object-contain bg-black"
-          muted={peer.isLocal}
-          playsInline
-          autoPlay
-        />
+        <>
+          <video
+            ref={screenRef}
+            className={cn(
+              "pointer-events-none h-full w-full bg-black",
+              showScreen ? "object-contain" : "hidden",
+            )}
+            muted={peer.isLocal}
+            playsInline
+            autoPlay
+          />
+          <video
+            ref={camRef}
+            className={cn(
+              "pointer-events-none bg-black object-cover",
+              showScreen && showCam
+                ? "absolute bottom-3 right-3 z-[5] h-24 w-24 rounded-xl object-cover ring-2 ring-white/20 shadow-lg sm:h-28 sm:w-28"
+                : showCam
+                  ? "h-full w-full"
+                  : "hidden",
+            )}
+            muted={peer.isLocal}
+            playsInline
+            autoPlay
+          />
+          {showScreen && !showCam && (
+            <div className="pointer-events-none absolute bottom-3 right-3 z-[5] flex h-24 w-24 items-center justify-center rounded-xl bg-black/50 ring-2 ring-white/10 sm:h-28 sm:w-28">
+              <Avatar name={peer.name} src={peer.avatarUrl} size="lg" />
+            </div>
+          )}
+        </>
       ) : (
         <div
           className={cn(
-            "flex h-full flex-col items-center justify-center bg-gradient-to-b from-[#121212] to-[#080808]",
+            "pointer-events-none flex h-full flex-col items-center justify-center bg-gradient-to-b from-[#121212] to-[#080808]",
             compact ? "gap-1.5" : "gap-3",
           )}
         >
@@ -1373,13 +1646,49 @@ const PeerTile = function PeerTile({
                 "shadow-[0_0_0_3px_rgba(52,211,153,0.95),0_0_20px_rgba(52,211,153,0.5)]",
             )}
           >
-            <Avatar name={peer.name} size={compact ? "lg" : "xl"} />
+            <Avatar
+              name={peer.name}
+              src={peer.avatarUrl}
+              size={compact ? "lg" : "xl"}
+            />
           </div>
         </div>
       )}
+
+      {!compact && (onFocusToggle || onFullscreen) && peer.screenOn && (
+        <div className="absolute right-2 top-2 z-[8] flex gap-1">
+          {onFocusToggle && (
+            <button
+              type="button"
+              title={isFocused ? "Exit focus" : "Focus screen"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onFocusToggle();
+              }}
+              className="rounded-lg bg-black/60 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/15 hover:bg-black/80"
+            >
+              {isFocused ? "Grid" : "Focus"}
+            </button>
+          )}
+          {onFullscreen && (
+            <button
+              type="button"
+              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onFullscreen();
+              }}
+              className="rounded-lg bg-black/60 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/15 hover:bg-black/80"
+            >
+              {isFullscreen ? "Exit FS" : "Full"}
+            </button>
+          )}
+        </div>
+      )}
+
       <div
         className={cn(
-          "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent",
+          "pointer-events-none absolute inset-x-0 bottom-0 z-[6] bg-gradient-to-t from-black/70 to-transparent",
           compact ? "px-2 pb-1.5 pt-5" : "px-3 pb-3 pt-8",
         )}
       >
@@ -1403,22 +1712,54 @@ const PeerTile = function PeerTile({
               screen
             </span>
           )}
+          {peer.screenOn && peer.camOn && (
+            <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] text-white">
+              cam
+            </span>
+          )}
         </div>
-        {onVolumeChange && !compact && (
-          <label className="mt-1.5 flex items-center gap-2 text-[10px] text-white/60">
-            Vol
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={volume}
-              onChange={(e) => onVolumeChange(Number(e.target.value))}
-              className="h-1 w-full accent-emerald-400"
-            />
-          </label>
-        )}
       </div>
+
+      {volOpen && onVolumeChange && menuPos && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-[90]"
+            aria-label="Close volume"
+            onClick={(e) => {
+              e.stopPropagation();
+              setVolOpen(false);
+            }}
+          />
+          <div
+            className="fixed z-[91] w-56 rounded-xl border border-white/10 bg-[#161616] p-3 shadow-2xl"
+            style={{
+              left: Math.min(menuPos.x, window.innerWidth - 240),
+              top: Math.min(menuPos.y, window.innerHeight - 100),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-2 truncate text-xs font-medium text-white">
+              {peer.name}
+            </p>
+            <label className="flex items-center gap-2 text-[11px] text-white/60">
+              Vol
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={volume}
+                onChange={(e) => onVolumeChange(Number(e.target.value))}
+                className="h-1 w-full accent-emerald-400"
+              />
+              <span className="w-8 text-right tabular-nums text-white/50">
+                {Math.round(volume * 100)}
+              </span>
+            </label>
+          </div>
+        </>
+      )}
     </div>
   );
 };

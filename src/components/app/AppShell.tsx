@@ -267,6 +267,14 @@ export function AppShell({
 
   const localName = localProfile?.display_name ?? displayName;
   const localAvatar = localProfile?.avatar_url ?? avatarUrl ?? null;
+  const callAvatarByUserId = useMemo(() => {
+    const map: Record<string, string | null> = {};
+    for (const m of serverMembers) {
+      map[m.id] = m.avatar_url;
+    }
+    if (userId) map[userId] = localAvatar;
+    return map;
+  }, [serverMembers, userId, localAvatar]);
   const localStatus = localProfile?.status ?? "online";
   const localCustomStatus = localProfile?.custom_status ?? null;
 
@@ -729,6 +737,8 @@ export function AppShell({
                 callKey={callKey}
                 channelName={voiceSession.channelName}
                 displayName={localName}
+                avatarUrl={localAvatar}
+                avatarByUserId={callAvatarByUserId}
                 variant={viewingCallUi ? "full" : "pip"}
                 returnHref={
                   demo
@@ -847,6 +857,11 @@ export function AppShell({
                 onCancelReply={onCancelReply}
                 onSend={onSend}
                 onTyping={onTyping}
+                mentionables={serverMembers.map((m) => ({
+                  id: m.id,
+                  display_name: m.display_name,
+                  username: null,
+                }))}
                 searchActive={Boolean(searchQuery)}
                 pinsActive={pinsOnly}
                 onToggleSearch={() =>
@@ -1060,6 +1075,8 @@ const MemoCallSlot = memo(function MemoCallSlot({
   callKey,
   channelName,
   displayName,
+  avatarUrl,
+  avatarByUserId,
   variant,
   returnHref,
   onConnected,
@@ -1072,6 +1089,8 @@ const MemoCallSlot = memo(function MemoCallSlot({
   callKey: number;
   channelName: string;
   displayName: string;
+  avatarUrl?: string | null;
+  avatarByUserId?: Record<string, string | null>;
   variant: "full" | "pip";
   returnHref: string;
   onConnected: () => void;
@@ -1088,6 +1107,8 @@ const MemoCallSlot = memo(function MemoCallSlot({
       channelId={channelId}
       channelName={channelName}
       displayName={displayName}
+      avatarUrl={avatarUrl}
+      avatarByUserId={avatarByUserId}
       variant={variant}
       returnHref={returnHref}
       onConnected={onConnected}

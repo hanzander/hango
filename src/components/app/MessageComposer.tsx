@@ -21,6 +21,12 @@ export type SendPayload = {
   gifName?: string | null;
 };
 
+type Mentionable = {
+  id: string;
+  display_name: string;
+  username?: string | null;
+};
+
 type MessageComposerProps = {
   channelName: string;
   channelId?: string;
@@ -29,6 +35,7 @@ type MessageComposerProps = {
   onCancelReply?: () => void;
   onSend: (payload: SendPayload) => Promise<void> | void;
   onTyping?: () => void;
+  mentionables?: Mentionable[];
   searchOpen?: boolean;
   searchActive?: boolean;
   pinsActive?: boolean;
@@ -44,6 +51,7 @@ export function MessageComposer({
   onCancelReply,
   onSend,
   onTyping,
+  mentionables = [],
   searchActive,
   pinsActive,
   onToggleSearch,
@@ -54,10 +62,56 @@ export function MessageComposer({
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [gifOpen, setGifOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [mentionIdx, setMentionIdx] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const typingAt = useRef(0);
   const draftKey = channelId ? `hango-draft:${channelId}` : null;
+
+  const mentionMatch = (() => {
+    const caret = textareaRef.current?.selectionStart ?? value.length;
+    const before = value.slice(0, caret);
+    const m = before.match(/(^|[\s([{])@([^\s@]*)$/);
+    if (!m) return null;
+    return { start: caret - (m[2].length + 1), query: m[2].toLowerCase() };
+  })();
+
+  const mentionSuggestions = mentionMatch
+    ? [
+        { id: "everyone", display_name: "everyone", username: null as string | null },
+        { id: "here", display_name: "here", username: null },
+        ...mentionables,
+      ]
+        .filter((m) => {
+          const q = mentionMatch.query;
+          if (!q) return true;
+          return (
+            m.display_name.toLowerCase().includes(q) ||
+            (m.username?.toLowerCase().includes(q) ?? false)
+          );
+        })
+        .slice(0, 8)
+    : [];
+
+  useEffect(() => {
+    setMentionIdx(0);
+  }, [mentionMatch?.query, mentionSuggestions.length]);
+
+  function insertMention(m: Mentionable) {
+    if (!mentionMatch) return;
+    const caret = textareaRef.current?.selectionStart ?? value.length;
+    const insert = `@${m.display_name} `;
+    const next =
+      value.slice(0, mentionMatch.start) + insert + value.slice(caret);
+    setValue(next);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const pos = mentionMatch.start + insert.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  }
 
   useEffect(() => {
     if (!draftKey) {
@@ -142,10 +196,41 @@ export function MessageComposer({
       onCancelReply?.();
     } finally {
       setSending(false);
+      requestAnimationFrame(() => textareaRef.current?.focus());
     }
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIdx((i) => (i + 1) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIdx(
+          (i) =>
+            (i - 1 + mentionSuggestions.length) % mentionSuggestions.length,
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertMention(mentionSuggestions[mentionIdx] ?? mentionSuggestions[0]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        // break mention by adding a space after @query effectively ignored — just blur match by moving caret
+        const el = textareaRef.current;
+        if (el) {
+          const pos = el.selectionStart;
+          setValue(value.slice(0, pos) + " " + value.slice(pos));
+        }
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void handleSubmit();
@@ -226,6 +311,34 @@ export function MessageComposer({
           "focus-within:ring-border-strong",
         )}
       >
+        {mentionSuggestions.length > 0 && (
+          <div className="border-b border-border py-1">
+            {mentionSuggestions.map((m, i) => (
+              <button
+                key={m.id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertMention(m);
+                }}
+                className={cn(
+                  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm",
+                  i === mentionIdx
+                    ? "bg-emerald-500/15 text-text"
+                    : "text-text-secondary hover:bg-bg-hover",
+                )}
+              >
+                <span className="font-medium text-emerald-300">
+                  @{m.display_name}
+                </span>
+                {m.username ? (
+                  <span className="text-xs text-text-muted">@{m.username}</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        )}
+
         {uploads.length > 0 && (
           <div className="flex flex-wrap gap-2 border-b border-border px-3 py-2.5">
             {uploads.map((u) => (
@@ -302,6 +415,9 @@ export function MessageComposer({
                       onCancelReply?.();
                     } finally {
                       setSending(false);
+                      requestAnimationFrame(() =>
+                        textareaRef.current?.focus(),
+                      );
                     }
                   })();
                 }}

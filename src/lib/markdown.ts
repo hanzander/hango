@@ -1,4 +1,4 @@
-/** Minimal Discord-like markdown → React-safe HTML-ish segments */
+/** Minimal Discord-like markdown → React-safe segments */
 
 export type TextSeg =
   | { type: "text"; value: string }
@@ -10,8 +10,9 @@ export type TextSeg =
 
 export function parseDiscordMarkdown(input: string): TextSeg[] {
   const segs: TextSeg[] = [];
+  // Mentions: @everyone/@here, @username, or up to 3-word display names
   const re =
-    /(\|\|([\s\S]+?)\|\|)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(`([^`]+)`)|(@\w+)/g;
+    /(\|\|([\s\S]+?)\|\|)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(`([^`]+)`)|(@(?:everyone|here)|@[A-Za-z0-9_.-]+(?:\s+[A-Za-z0-9_.-]+){0,2})/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(input))) {

@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       .single(),
     supabase
       .from("profiles")
-      .select("display_name, username")
+      .select("display_name, username, avatar_url")
       .eq("id", user.id)
       .single(),
   ]);
@@ -82,6 +82,9 @@ export async function POST(request: Request) {
   const at = new AccessToken(apiKey, apiSecret, {
     identity,
     name,
+    metadata: JSON.stringify({
+      avatar_url: profile?.avatar_url ?? null,
+    }),
     ttl: "2h",
   });
 
