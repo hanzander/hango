@@ -17,6 +17,8 @@ import {
   RoomEvent,
   Track,
   VideoPresets,
+  createAudioAnalyser,
+  type LocalAudioTrack,
   type LocalParticipant,
   type Participant,
   type RemoteTrack,
@@ -31,6 +33,10 @@ import {
   playCameraOnSound,
   unlockAudio,
   playSoundboardClip,
+  playStreamStartedSound,
+  playStreamStoppedSound,
+  playStreamWatcherJoinedSound,
+  playStreamWatcherLeftSound,
   SOUNDBOARD_CLIPS,
   SOUNDBOARD_COOLDOWN_MS,
 } from "@/lib/call-sounds";
@@ -261,9 +267,16 @@ export function CallOverlay({
   const [noiseSuppression, setNoiseSuppressionState] = useState(false);
   const [focusedIdentity, setFocusedIdentity] = useState<string | null>(null);
   const [stageFullscreen, setStageFullscreen] = useState(false);
+  const [streamViewers, setStreamViewers] = useState<
+    { id: string; name: string }[]
+  >([]);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const prevScreenIds = useRef<Set<string>>(new Set());
+  const screenAnnounceReady = useRef(false);
+  const prevRemoteScreen = useRef<Map<string, boolean>>(new Map());
   const { toast } = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   const wasReconnecting = useRef(false);
   const displayNameRef = useRef(displayName);
   displayNameRef.current = displayName;
@@ -356,6 +369,108 @@ export function CallOverlay({
     audioHostRef.current = audioHost;
 
     const attachedAudio = new Set<string>();
+    /** Remotes only — local speaking uses mic VAD (SFU active-speaker lags for self). */
+    const remoteSpeakingIds: string[] = [];
+    let localSpeaking = false;
+    let localSpeakOffTimer: ReturnType<typeof setTimeout> | null = null;
+    let vadCleanup: (() => void) | null = null;
+    let vadTimer: ReturnType<typeof setInterval> | null = null;
+
+    function emitSpeaking() {
+      const localId = room.localParticipant.identity;
+      const remotes = remoteSpeakingIds.filter((id) => id !== localId);
+      const ids =
+        localSpeaking && localId ? [localId, ...remotes] : remotes;
+      setSpeakingIds((prev) => {
+        if (
+          prev.length === ids.length &&
+          prev.every((id, i) => id === ids[i])
+        ) {
+          return prev;
+        }
+        return ids;
+      });
+      onSpeakingChangeRef.current?.(ids);
+    }
+
+    function stopLocalVad() {
+      if (vadTimer != null) {
+        clearInterval(vadTimer);
+        vadTimer = null;
+      }
+      if (localSpeakOffTimer != null) {
+        clearTimeout(localSpeakOffTimer);
+        localSpeakOffTimer = null;
+      }
+      try {
+        vadCleanup?.();
+      } catch {
+        /* ignore */
+      }
+      vadCleanup = null;
+      if (localSpeaking) {
+        localSpeaking = false;
+        emitSpeaking();
+      }
+    }
+
+    function startLocalVad(track: LocalAudioTrack) {
+      stopLocalVad();
+      try {
+        const { calculateVolume, cleanup } = createAudioAnalyser(track, {
+          // Snappy Discord-like local ring (server active-speaker is too slow for self)
+          fftSize: 256,
+          smoothingTimeConstant: 0.15,
+          minDecibels: -90,
+          maxDecibels: -25,
+        });
+        vadCleanup = cleanup;
+        const SPEAK_ON = 0.045;
+        const SPEAK_OFF = 0.028;
+        vadTimer = setInterval(() => {
+          if (
+            !room.localParticipant.isMicrophoneEnabled ||
+            track.isMuted
+          ) {
+            if (localSpeakOffTimer != null) {
+              clearTimeout(localSpeakOffTimer);
+              localSpeakOffTimer = null;
+            }
+            if (localSpeaking) {
+              localSpeaking = false;
+              emitSpeaking();
+            }
+            return;
+          }
+          let vol = 0;
+          try {
+            vol = calculateVolume();
+          } catch {
+            return;
+          }
+          if (vol >= SPEAK_ON) {
+            if (localSpeakOffTimer != null) {
+              clearTimeout(localSpeakOffTimer);
+              localSpeakOffTimer = null;
+            }
+            if (!localSpeaking) {
+              localSpeaking = true;
+              emitSpeaking();
+            }
+          } else if (vol < SPEAK_OFF && localSpeaking) {
+            if (localSpeakOffTimer == null) {
+              localSpeakOffTimer = setTimeout(() => {
+                localSpeakOffTimer = null;
+                localSpeaking = false;
+                emitSpeaking();
+              }, 180);
+            }
+          }
+        }, 32);
+      } catch {
+        /* analyser unsupported — fall back to SFU speakers only */
+      }
+    }
 
     function attachRemoteAudio(track: RemoteTrack, participantId: string) {
       if (track.kind !== Track.Kind.Audio) return;
@@ -398,45 +513,121 @@ export function CallOverlay({
 
     room
       .on(RoomEvent.ParticipantConnected, schedulePeers)
-      .on(RoomEvent.ParticipantDisconnected, schedulePeers)
-      .on(RoomEvent.LocalTrackPublished, schedulePeers)
-      .on(RoomEvent.LocalTrackUnpublished, schedulePeers)
+      .on(RoomEvent.ParticipantDisconnected, (p) => {
+        schedulePeers();
+        setStreamViewers((prev) => {
+          if (!prev.some((v) => v.id === p.identity)) return prev;
+          return prev.filter((v) => v.id !== p.identity);
+        });
+      })
+      .on(RoomEvent.LocalTrackPublished, (pub) => {
+        schedulePeers();
+        if (pub.track?.kind === Track.Kind.Audio) {
+          startLocalVad(pub.track as LocalAudioTrack);
+        }
+      })
+      .on(RoomEvent.LocalTrackUnpublished, (pub) => {
+        schedulePeers();
+        if (pub.track?.kind === Track.Kind.Audio || pub.source === Track.Source.Microphone) {
+          stopLocalVad();
+        }
+        if (pub.source === Track.Source.ScreenShare) {
+          setStreamViewers([]);
+        }
+      })
       // Intentionally NOT listening to TrackMuted/Unmuted — those fire too often
       // and were freezing the tab. Mute UI updates from local toggles + rare peer refresh.
-      .on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+      .on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
         if (!participant.isLocal && track.kind === Track.Kind.Audio) {
           attachRemoteAudio(track as RemoteTrack, participant.identity);
         }
         if (track.kind === Track.Kind.Video) schedulePeers();
+        // Tell the sharer we're watching (Discord stream watcher ping)
+        if (
+          !participant.isLocal &&
+          pub.source === Track.Source.ScreenShare &&
+          track.kind === Track.Kind.Video
+        ) {
+          void (async () => {
+            try {
+              const data = new TextEncoder().encode(
+                JSON.stringify({ t: "sw", on: 1, at: Date.now() }),
+              );
+              await room.localParticipant.publishData(data, { reliable: true });
+            } catch {
+              /* ignore */
+            }
+          })();
+        }
       })
-      .on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
+      .on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
         detachTrack(track as RemoteTrack, participant.identity);
         if (track.kind === Track.Kind.Video) schedulePeers();
+        if (
+          !participant.isLocal &&
+          pub.source === Track.Source.ScreenShare &&
+          track.kind === Track.Kind.Video
+        ) {
+          void (async () => {
+            try {
+              const data = new TextEncoder().encode(
+                JSON.stringify({ t: "sw", on: 0, at: Date.now() }),
+              );
+              await room.localParticipant.publishData(data, { reliable: true });
+            } catch {
+              /* ignore */
+            }
+          })();
+        }
       })
       .on(RoomEvent.MediaDevicesError, (err) => {
         setDeviceHint(friendlyDeviceError(err, "device"));
       })
       .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-        const ids = speakers.map((s) => s.identity);
-        setSpeakingIds((prev) => {
-          if (
-            prev.length === ids.length &&
-            prev.every((id, i) => id === ids[i])
-          ) {
-            return prev;
-          }
-          return ids;
-        });
-        onSpeakingChangeRef.current?.(ids);
+        const localId = room.localParticipant.identity;
+        remoteSpeakingIds.length = 0;
+        for (const s of speakers) {
+          if (s.identity !== localId) remoteSpeakingIds.push(s.identity);
+        }
+        emitSpeaking();
       })
       .on(RoomEvent.DataReceived, (payload, participant) => {
         if (participant?.isLocal) return;
         try {
           const text = new TextDecoder().decode(payload);
-          const msg = JSON.parse(text) as { t?: string; id?: string };
+          const msg = JSON.parse(text) as {
+            t?: string;
+            id?: string;
+            on?: number;
+          };
           if (msg.t === "sb" && typeof msg.id === "string") {
             // Sender already rate-limited; force play so we stay in sync
             playSoundboardClip(msg.id, { force: true });
+            return;
+          }
+          if (msg.t === "sw" && participant) {
+            // Only the active sharer cares about watchers
+            if (!room.localParticipant.isScreenShareEnabled) return;
+            const id = participant.identity;
+            const name = participant.name || id.slice(0, 8);
+            const watching = msg.on === 1;
+            setStreamViewers((prev) => {
+              const has = prev.some((v) => v.id === id);
+              if (watching) {
+                if (has) return prev;
+                queueMicrotask(() => {
+                  playStreamWatcherJoinedSound();
+                  toastRef.current(`${name} is watching your stream`);
+                });
+                return [...prev, { id, name }];
+              }
+              if (!has) return prev;
+              queueMicrotask(() => {
+                playStreamWatcherLeftSound();
+                toastRef.current(`${name} left your stream`);
+              });
+              return prev.filter((v) => v.id !== id);
+            });
           }
         } catch {
           /* ignore */
@@ -457,6 +648,13 @@ export function CallOverlay({
           onConnectedRef.current?.();
           schedulePeers();
           knownRemotes.current = new Set(room.remoteParticipants.keys());
+          // Mic may already be published — attach local VAD
+          const micPub = room.localParticipant.getTrackPublication(
+            Track.Source.Microphone,
+          );
+          if (micPub?.track?.kind === Track.Kind.Audio) {
+            startLocalVad(micPub.track as LocalAudioTrack);
+          }
         } else if (state === ConnectionState.Connecting) {
           setConnLabel("Connecting…");
         } else if (state === ConnectionState.Reconnecting) {
@@ -516,6 +714,12 @@ export function CallOverlay({
           setNeedsMicAllow(false);
           setDeviceHint(null);
           setMicHelpSteps([]);
+          const micPub = room.localParticipant.getTrackPublication(
+            Track.Source.Microphone,
+          );
+          if (micPub?.track?.kind === Track.Kind.Audio) {
+            startLocalVad(micPub.track as LocalAudioTrack);
+          }
         } catch (micErr) {
           try {
             await new Promise((r) => setTimeout(r, 120));
@@ -525,6 +729,12 @@ export function CallOverlay({
             setNeedsMicAllow(false);
             setDeviceHint(null);
             setMicHelpSteps([]);
+            const micPub = room.localParticipant.getTrackPublication(
+              Track.Source.Microphone,
+            );
+            if (micPub?.track?.kind === Track.Kind.Audio) {
+              startLocalVad(micPub.track as LocalAudioTrack);
+            }
           } catch {
             setDeviceHint(friendlyDeviceError(micErr, "microphone"));
             setMicOn(false);
@@ -552,6 +762,7 @@ export function CallOverlay({
     return () => {
       cancelled = true;
       intentionalLeave.current = true;
+      stopLocalVad();
       if (peerTimer.current) {
         clearTimeout(peerTimer.current);
         peerTimer.current = null;
@@ -771,8 +982,17 @@ export function CallOverlay({
       try {
         await r.localParticipant.setScreenShareEnabled(next);
         setScreenOn(next);
+        if (next) {
+          playStreamStartedSound();
+          toast("You're sharing your screen");
+        } else {
+          playStreamStoppedSound();
+          setStreamViewers([]);
+          toast("Screen share stopped");
+        }
       } catch (err) {
         setScreenOn(false);
+        setStreamViewers([]);
         setDeviceHint(
           err instanceof Error
             ? err.message
@@ -781,6 +1001,46 @@ export function CallOverlay({
       }
     });
   }
+
+  // Discord-like: announce when someone else starts/stops a stream
+  useEffect(() => {
+    if (status !== "live") {
+      screenAnnounceReady.current = false;
+      prevRemoteScreen.current = new Map();
+      return;
+    }
+    const nextMap = new Map<string, boolean>();
+    for (const p of peers) {
+      if (p.isLocal) continue;
+      nextMap.set(p.identity, p.screenOn);
+    }
+    if (!screenAnnounceReady.current) {
+      prevRemoteScreen.current = nextMap;
+      screenAnnounceReady.current = true;
+      return;
+    }
+    const prev = prevRemoteScreen.current;
+    for (const [id, on] of nextMap) {
+      const was = prev.get(id) ?? false;
+      if (on && !was) {
+        const name = peers.find((p) => p.identity === id)?.name || "Someone";
+        playStreamStartedSound();
+        toast(`${name} started a stream`);
+      } else if (!on && was) {
+        const name = peers.find((p) => p.identity === id)?.name || "Someone";
+        playStreamStoppedSound();
+        toast(`${name} stopped streaming`);
+      }
+    }
+    for (const [id, was] of prev) {
+      if (was && !nextMap.has(id)) {
+        const name = peers.find((p) => p.identity === id)?.name || "Someone";
+        playStreamStoppedSound();
+        toast(`${name} stopped streaming`);
+      }
+    }
+    prevRemoteScreen.current = nextMap;
+  }, [peers, status, toast]);
 
   // Push-to-talk: hold Space while PTT mode is on
   useEffect(() => {
@@ -1152,11 +1412,33 @@ export function CallOverlay({
             {live ? `${peers.length} · ${connLabel}` : connLabel}
             {deafened ? " · Deafened" : ""}
             {pttMode ? (pttHeld ? " · PTT live" : " · PTT (hold Space)") : ""}
-            {peers.some((p) => p.screenOn)
-              ? ` · Watching ${peers.find((p) => p.screenOn && !p.isLocal)?.name || "screen"}`
-              : ""}
+            {screenOn
+              ? streamViewers.length > 0
+                ? ` · ${streamViewers.length} watching your stream`
+                : " · Sharing your screen"
+              : peers.some((p) => p.screenOn)
+                ? ` · Watching ${peers.find((p) => p.screenOn && !p.isLocal)?.name || "screen"}`
+                : ""}
           </p>
         </div>
+        {screenOn && streamViewers.length > 0 && (
+          <div className="flex max-w-[min(420px,55vw)] flex-wrap items-center justify-end gap-1.5">
+            {streamViewers.slice(0, 5).map((v) => (
+              <span
+                key={v.id}
+                className="truncate rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-200 ring-1 ring-emerald-500/30"
+                title={`${v.name} is watching`}
+              >
+                {v.name}
+              </span>
+            ))}
+            {streamViewers.length > 5 && (
+              <span className="text-[10px] text-text-muted">
+                +{streamViewers.length - 5}
+              </span>
+            )}
+          </div>
+        )}
       </header>
 
       {audioBlocked && (

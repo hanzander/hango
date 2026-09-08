@@ -186,6 +186,52 @@ export function playCameraOnSound() {
   );
 }
 
+/** Discord-like: you or someone started screen sharing */
+export function playStreamStartedSound() {
+  playTones(
+    [
+      { freq: 523.25, start: 0, dur: 0.08, type: "sine", gain: 0.55 },
+      { freq: 659.25, start: 0.07, dur: 0.1, type: "sine", gain: 0.65 },
+      { freq: 783.99, start: 0.15, dur: 0.16, type: "sine", gain: 0.7 },
+    ],
+    { volume: VOL.peer * 1.15 },
+  );
+}
+
+/** Discord-like: screen share ended */
+export function playStreamStoppedSound() {
+  playTones(
+    [
+      { freq: 698.46, start: 0, dur: 0.09, type: "sine", gain: 0.6 },
+      { freq: 523.25, start: 0.08, dur: 0.12, type: "sine", gain: 0.55 },
+      { freq: 392.0, start: 0.16, dur: 0.14, type: "sine", gain: 0.5 },
+    ],
+    { volume: VOL.peer * 1.1 },
+  );
+}
+
+/** Someone started watching your stream */
+export function playStreamWatcherJoinedSound() {
+  playTones(
+    [
+      { freq: 880, start: 0, dur: 0.06, type: "triangle", gain: 0.5 },
+      { freq: 1318.5, start: 0.05, dur: 0.1, type: "triangle", gain: 0.6 },
+    ],
+    { volume: VOL.peer },
+  );
+}
+
+/** Someone stopped watching your stream */
+export function playStreamWatcherLeftSound() {
+  playTones(
+    [
+      { freq: 1174.7, start: 0, dur: 0.06, type: "triangle", gain: 0.5 },
+      { freq: 740, start: 0.06, dur: 0.1, type: "triangle", gain: 0.55 },
+    ],
+    { volume: VOL.peer },
+  );
+}
+
 /** Discord-like ping when someone else chats in the server */
 export function playMessageNotification() {
   const nowMs = performance.now();
