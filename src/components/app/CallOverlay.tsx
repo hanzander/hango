@@ -295,6 +295,8 @@ export function CallOverlay({
   const peerVolumesRef = useRef<Record<string, number>>({});
   const mediaBusyRef = useRef(false);
   const intentionalLeave = useRef(false);
+  const intentionalScreenStop = useRef(false);
+  const reconnectAttempts = useRef(0);
   const micBeforeDeafen = useRef(true);
   const pttModeRef = useRef(false);
   const knownRemotes = useRef<Set<string> | null>(null);
@@ -347,7 +349,10 @@ export function CallOverlay({
     knownRemotes.current = null;
 
     const room = new Room({
-      // Audio-first Lounge: skip adaptive video work that hammers the main thread
+      // Keep the call alive across SPA channel switches (Discord-style).
+      // LiveKit's default pageleave/freeze handlers were dropping people when
+      // browsing text channels or sharing screen.
+      disconnectOnPageLeave: false,
       adaptiveStream: false,
       dynacast: false,
       stopLocalTrackOnUnpublish: true,
@@ -356,9 +361,19 @@ export function CallOverlay({
         noiseSuppression: getNoiseSuppression(),
         autoGainControl: true,
       },
+      videoCaptureDefaults: {
+        resolution: VideoPresets.h720.resolution,
+      },
     });
     roomRef.current = room;
     setRoom(room);
+
+    // Still hang up on a real tab close / refresh
+    function onBrowserUnload() {
+      intentionalLeave.current = true;
+      void room.disconnect();
+    }
+    window.addEventListener("beforeunload", onBrowserUnload);
 
     // display:none can mute HTMLAudioElement in Chrome — keep off-screen instead
     const audioHost = document.createElement("div");
@@ -375,6 +390,19 @@ export function CallOverlay({
     let localSpeakOffTimer: ReturnType<typeof setTimeout> | null = null;
     let vadCleanup: (() => void) | null = null;
     let vadTimer: ReturnType<typeof setInterval> | null = null;
+    let isSoftReconnecting = false;
+
+    function stripFreezeDisconnect(r: Room) {
+      // livekit-client always binds window "freeze" → disconnect, which can fire
+      // during heavy screen-share + SPA navigation. Remove it; we unload ourselves.
+      const handler = (
+        r as unknown as { onPageLeave?: EventListener }
+      ).onPageLeave;
+      if (!handler) return;
+      window.removeEventListener("freeze", handler);
+      window.removeEventListener("pagehide", handler);
+      window.removeEventListener("beforeunload", handler);
+    }
 
     function emitSpeaking() {
       const localId = room.localParticipant.identity;
@@ -528,11 +556,20 @@ export function CallOverlay({
       })
       .on(RoomEvent.LocalTrackUnpublished, (pub) => {
         schedulePeers();
-        if (pub.track?.kind === Track.Kind.Audio || pub.source === Track.Source.Microphone) {
+        if (
+          pub.track?.kind === Track.Kind.Audio ||
+          pub.source === Track.Source.Microphone
+        ) {
           stopLocalVad();
         }
         if (pub.source === Track.Source.ScreenShare) {
+          setScreenOn(false);
           setStreamViewers([]);
+          if (!intentionalScreenStop.current) {
+            playStreamStoppedSound();
+            toastRef.current("Screen share stopped — you’re still in voice");
+          }
+          intentionalScreenStop.current = false;
         }
       })
       // Intentionally NOT listening to TrackMuted/Unmuted — those fire too often
@@ -638,6 +675,7 @@ export function CallOverlay({
       })
       .on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
         if (state === ConnectionState.Connected) {
+          stripFreezeDisconnect(room);
           setStatus("live");
           setConnLabel("Voice Connected");
           setDeviceHint((prev) => (prev === CONNECTING_HINT ? null : prev));
@@ -663,15 +701,88 @@ export function CallOverlay({
           toast("Reconnecting to voice…");
         } else if (
           state === ConnectionState.Disconnected &&
-          !intentionalLeave.current
+          !intentionalLeave.current &&
+          !cancelled &&
+          !isSoftReconnecting
         ) {
-          setStatus("error");
-          setConnLabel("Disconnected");
-          setError("Disconnected from the call.");
-          toast("Disconnected from voice", "danger");
-          onDisconnectedRef.current?.();
+          // Discord-style: never dump you out of the VC on a blip — soft reconnect
+          void softReconnect();
         }
       });
+
+    async function softReconnect() {
+      if (intentionalLeave.current || cancelled || isSoftReconnecting) return;
+      if (reconnectAttempts.current >= 4) {
+        setStatus("error");
+        setConnLabel("Disconnected");
+        setError("Disconnected from the call.");
+        toast("Disconnected from voice", "danger");
+        onDisconnectedRef.current?.();
+        return;
+      }
+      isSoftReconnecting = true;
+      reconnectAttempts.current += 1;
+      setStatus("connecting");
+      setConnLabel("Reconnecting…");
+      setError(null);
+      toast(
+        reconnectAttempts.current === 1
+          ? "Reconnecting to voice…"
+          : `Still reconnecting (${reconnectAttempts.current})…`,
+      );
+      try {
+        if (room.state !== ConnectionState.Disconnected) {
+          await room.disconnect(false);
+        }
+        await new Promise((r) => setTimeout(r, 250 * reconnectAttempts.current));
+        if (cancelled || intentionalLeave.current) return;
+
+        const res = await fetch("/api/livekit/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channelId,
+            displayName: displayNameRef.current,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to reconnect");
+
+        await room.connect(data.url, data.token, { autoSubscribe: true });
+        stripFreezeDisconnect(room);
+        attachExistingRemoteAudio();
+        await room.startAudio().catch(() => setAudioBlocked(true));
+
+        try {
+          const stickyMic = getStickyDevice("audioinput") || undefined;
+          await enableMicrophoneWithRetry(room, stickyMic);
+          setMicOn(true);
+          const micPub = room.localParticipant.getTrackPublication(
+            Track.Source.Microphone,
+          );
+          if (micPub?.track?.kind === Track.Kind.Audio) {
+            startLocalVad(micPub.track as LocalAudioTrack);
+          }
+        } catch {
+          setMicOn(false);
+          setNeedsMicAllow(true);
+        }
+
+        reconnectAttempts.current = 0;
+        setStatus("live");
+        setConnLabel("Voice Connected");
+        setScreenOn(room.localParticipant.isScreenShareEnabled);
+        onConnectedRef.current?.();
+        schedulePeers();
+        toast("Voice reconnected", "success");
+      } catch {
+        if (!cancelled && !intentionalLeave.current) {
+          window.setTimeout(() => void softReconnect(), 800);
+        }
+      } finally {
+        isSoftReconnecting = false;
+      }
+    }
 
     async function start() {
       setStatus("connecting");
@@ -695,6 +806,8 @@ export function CallOverlay({
           autoSubscribe: true,
         });
         if (cancelled) return;
+        stripFreezeDisconnect(room);
+        reconnectAttempts.current = 0;
 
         attachExistingRemoteAudio();
 
@@ -762,6 +875,7 @@ export function CallOverlay({
     return () => {
       cancelled = true;
       intentionalLeave.current = true;
+      window.removeEventListener("beforeunload", onBrowserUnload);
       stopLocalVad();
       if (peerTimer.current) {
         clearTimeout(peerTimer.current);
@@ -980,7 +1094,20 @@ export function CallOverlay({
       const next = !r.localParticipant.isScreenShareEnabled;
       setDeviceHint(null);
       try {
-        await r.localParticipant.setScreenShareEnabled(next);
+        if (!next) intentionalScreenStop.current = true;
+        await r.localParticipant.setScreenShareEnabled(
+          next,
+          next
+            ? {
+                audio: true,
+                // Don't capture this Hango tab — navigating text channels would
+                // end the share (and feel like you left the call).
+                selfBrowserSurface: "exclude",
+                surfaceSwitching: "include",
+                systemAudio: "include",
+              }
+            : undefined,
+        );
         setScreenOn(next);
         if (next) {
           playStreamStartedSound();
@@ -991,6 +1118,7 @@ export function CallOverlay({
           toast("Screen share stopped");
         }
       } catch (err) {
+        intentionalScreenStop.current = false;
         setScreenOn(false);
         setStreamViewers([]);
         setDeviceHint(
@@ -1356,6 +1484,38 @@ export function CallOverlay({
             >
               <span className="flex h-4 w-4 items-center justify-center [&_svg]:h-4 [&_svg]:w-4">
                 {camOn ? <IconCamera /> : <IconCameraOff />}
+              </span>
+            </button>
+            <button
+              type="button"
+              title={deafened ? "Undeafen" : "Deafen"}
+              disabled={!room || mediaBusy}
+              onClick={() => void toggleDeafen()}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                deafened
+                  ? "bg-white text-black"
+                  : "bg-white/10 text-white hover:bg-white/15",
+              )}
+            >
+              <span className="flex h-4 w-4 items-center justify-center [&_svg]:h-4 [&_svg]:w-4">
+                {deafened ? <IconDeafened /> : <IconHeadphones />}
+              </span>
+            </button>
+            <button
+              type="button"
+              title={screenOn ? "Stop sharing" : "Share screen"}
+              disabled={!room || mediaBusy}
+              onClick={() => void toggleScreen()}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                screenOn
+                  ? "bg-emerald-500 text-black"
+                  : "bg-white/10 text-white hover:bg-white/15",
+              )}
+            >
+              <span className="flex h-4 w-4 items-center justify-center [&_svg]:h-4 [&_svg]:w-4">
+                <IconScreen />
               </span>
             </button>
             {returnHref && (
@@ -2051,7 +2211,10 @@ const PIP_H = 220;
 
 function DraggablePip({ children }: { children: ReactNode }) {
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const [mounted, setMounted] = useState(false);
+  // Avoid a blank frame on full→pip (felt like leaving the call)
+  const [mounted, setMounted] = useState(
+    () => typeof document !== "undefined",
+  );
   const drag = useRef<{
     ox: number;
     oy: number;
@@ -2576,6 +2739,28 @@ function IconCameraOff() {
         strokeWidth="1.75"
         strokeLinecap="round"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconScreen() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="3"
+        y="4"
+        width="18"
+        height="12"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <path
+        d="M8 20h8M12 16v4"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
       />
     </svg>
   );

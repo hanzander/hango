@@ -19,7 +19,7 @@ export function VoiceConnectedBar({
   return (
     <div className="border-t border-emerald-500/20 bg-emerald-500/10 px-2 py-2">
       <p className="px-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
-        {connected ? "Voice connected" : "Connecting…"}
+        {connected ? "Voice connected" : "Reconnecting…"}
       </p>
       <div className="mt-0.5 flex items-center gap-1">
         <Link

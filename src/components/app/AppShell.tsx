@@ -728,7 +728,10 @@ export function AppShell({
         {inCall && voiceSession && !demo && (
           <div
             className={
-              viewingCallUi ? "flex min-h-0 flex-1 flex-col" : undefined
+              viewingCallUi
+                ? "flex min-h-0 flex-1 flex-col"
+                : // Keep CallOverlay mounted while browsing text (Discord PiP host)
+                  "pointer-events-none fixed bottom-0 right-0 z-[60] h-0 w-0 overflow-visible"
             }
           >
             <CallErrorBoundary onReset={handleCallReset}>
