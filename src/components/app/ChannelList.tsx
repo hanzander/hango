@@ -16,6 +16,12 @@ type ChannelListProps = {
   hrefForChannel?: (channel: Channel) => string;
   homeHref?: string;
   voiceOccupants?: Record<string, PresenceUser[]>;
+  /** userId → media flags from LiveKit */
+  voiceMedia?: Record<
+    string,
+    { micOn?: boolean; camOn?: boolean; screenOn?: boolean }
+  >;
+  speakingIds?: string[];
   unreadChannels?: Set<string>;
   mutedChannels?: Set<string>;
   serverMuted?: boolean;
@@ -45,6 +51,8 @@ export function ChannelList({
   hrefForChannel = (channel) => `/app/${server.id}/${channel.id}`,
   homeHref = "/app",
   voiceOccupants = {},
+  voiceMedia = {},
+  speakingIds = [],
   unreadChannels,
   mutedChannels,
   serverMuted,
@@ -368,22 +376,60 @@ export function ChannelList({
                 </Link>
                 {occupants.length > 0 && (
                   <ul className="mt-0.5 ml-3 space-y-0.5 border-l border-border py-0.5 pl-3">
-                    {occupants.map((user) => (
-                      <li
-                        key={user.user_id}
-                        className="flex items-center gap-1.5 py-0.5"
-                      >
-                        <Avatar
-                          name={user.display_name}
-                          src={user.avatar_url}
-                          size="sm"
-                          className="!h-5 !w-5 !text-[8px]"
-                        />
-                        <span className="truncate text-[11px] text-text-secondary">
-                          {user.display_name}
-                        </span>
-                      </li>
-                    ))}
+                    {occupants.map((user) => {
+                      const media = voiceMedia[user.user_id];
+                      const speaking = speakingIds.includes(user.user_id);
+                      const muted = media ? media.micOn === false : false;
+                      return (
+                        <li
+                          key={user.user_id}
+                          className="flex items-center gap-1.5 py-0.5"
+                        >
+                          <div
+                            className={cn(
+                              "rounded-full transition-[box-shadow]",
+                              speaking &&
+                                "shadow-[0_0_0_2px_rgba(52,211,153,0.95)]",
+                            )}
+                          >
+                            <Avatar
+                              name={user.display_name}
+                              src={user.avatar_url}
+                              size="sm"
+                              className="!h-5 !w-5 !text-[8px]"
+                            />
+                          </div>
+                          <span
+                            className={cn(
+                              "min-w-0 flex-1 truncate text-[11px]",
+                              speaking
+                                ? "font-medium text-emerald-300"
+                                : "text-text-secondary",
+                            )}
+                          >
+                            {user.display_name}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-0.5 text-[9px] text-text-muted">
+                            {media?.screenOn && (
+                              <span
+                                className="rounded bg-emerald-500/20 px-1 text-emerald-300"
+                                title="Sharing screen"
+                              >
+                                live
+                              </span>
+                            )}
+                            {media?.camOn && (
+                              <span title="Camera on">cam</span>
+                            )}
+                            {muted && (
+                              <span className="text-red-300" title="Muted">
+                                mute
+                              </span>
+                            )}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </li>

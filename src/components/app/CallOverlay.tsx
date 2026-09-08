@@ -31,6 +31,8 @@ import {
   playUnmuteSound,
   playCameraOffSound,
   playCameraOnSound,
+  playUserJoinedSound,
+  playUserLeftSound,
   unlockAudio,
   playSoundboardClip,
   playStreamStartedSound,
@@ -53,9 +55,25 @@ import {
   setStickyDevice,
   pickStickyDevice,
   micCaptureOpts,
+  getPushToTalk,
+  setPushToTalk,
+  getPeerVolumes,
+  setPeerVolume,
 } from "@/lib/voice-prefs";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/utils";
+
+export type VoiceControls = {
+  micOn: boolean;
+  camOn: boolean;
+  screenOn: boolean;
+  deafened: boolean;
+  connected: boolean;
+  toggleMic: () => void;
+  toggleDeafen: () => void;
+  toggleScreen: () => void;
+  toggleCam: () => void;
+};
 
 type CallOverlayProps = {
   channelId: string;
@@ -70,10 +88,18 @@ type CallOverlayProps = {
   onDisconnected?: () => void;
   /** Remote peers in this LiveKit room — used for Lounge sidebar when presence lags */
   onRemoteRoster?: (
-    peers: { user_id: string; display_name: string }[],
+    peers: {
+      user_id: string;
+      display_name: string;
+      micOn: boolean;
+      camOn: boolean;
+      screenOn: boolean;
+    }[],
   ) => void;
   /** Identities currently speaking (for member list rings) */
   onSpeakingChange?: (ids: string[]) => void;
+  /** Expose mute/deafen/screen for Discord-style UserBar / connected strip */
+  onVoiceControls?: (controls: VoiceControls | null) => void;
   /** Discord-style mini window while browsing text channels */
   variant?: "full" | "pip";
   /** Link back to the voice channel (PiP header) */
@@ -236,6 +262,7 @@ export function CallOverlay({
   onDisconnected,
   onRemoteRoster,
   onSpeakingChange,
+  onVoiceControls,
   variant = "full",
   returnHref,
 }: CallOverlayProps) {
@@ -250,10 +277,12 @@ export function CallOverlay({
   const [camOn, setCamOn] = useState(false);
   const [screenOn, setScreenOn] = useState(false);
   const [deafened, setDeafened] = useState(false);
-  const [pttMode, setPttMode] = useState(false);
+  const [pttMode, setPttMode] = useState(() => getPushToTalk());
   const [pttHeld, setPttHeld] = useState(false);
   const [connLabel, setConnLabel] = useState("Connecting…");
-  const [peerVolumes, setPeerVolumes] = useState<Record<string, number>>({});
+  const [peerVolumes, setPeerVolumes] = useState<Record<string, number>>(
+    () => getPeerVolumes(),
+  );
   const [mediaBusy, setMediaBusy] = useState(false);
   const [deviceHint, setDeviceHint] = useState<string | null>(null);
   const [micHelpSteps, setMicHelpSteps] = useState<string[]>([]);
@@ -292,7 +321,7 @@ export function CallOverlay({
   const roomRef = useRef<Room | null>(null);
   const audioHostRef = useRef<HTMLDivElement | null>(null);
   const deafenedRef = useRef(false);
-  const peerVolumesRef = useRef<Record<string, number>>({});
+  const peerVolumesRef = useRef<Record<string, number>>(getPeerVolumes());
   const mediaBusyRef = useRef(false);
   const intentionalLeave = useRef(false);
   const intentionalScreenStop = useRef(false);
@@ -333,7 +362,13 @@ export function CallOverlay({
       onRemoteRosterRef.current?.(
         next
           .filter((p) => !p.isLocal)
-          .map((p) => ({ user_id: p.identity, display_name: p.name })),
+          .map((p) => ({
+            user_id: p.identity,
+            display_name: p.name,
+            micOn: p.micOn,
+            camOn: p.camOn,
+            screenOn: p.screenOn,
+          })),
       );
     }, 80);
   }, []);
@@ -540,9 +575,23 @@ export function CallOverlay({
     }
 
     room
-      .on(RoomEvent.ParticipantConnected, schedulePeers)
+      .on(RoomEvent.ParticipantConnected, (p) => {
+        schedulePeers();
+        if (knownRemotes.current) {
+          if (!knownRemotes.current.has(p.identity)) {
+            knownRemotes.current.add(p.identity);
+            playUserJoinedSound();
+            toastRef.current(`${p.name || "Someone"} joined`);
+          }
+        }
+      })
       .on(RoomEvent.ParticipantDisconnected, (p) => {
         schedulePeers();
+        if (knownRemotes.current?.has(p.identity)) {
+          knownRemotes.current.delete(p.identity);
+          playUserLeftSound();
+          toastRef.current(`${p.name || "Someone"} left`);
+        }
         setStreamViewers((prev) => {
           if (!prev.some((v) => v.id === p.identity)) return prev;
           return prev.filter((v) => v.id !== p.identity);
@@ -572,8 +621,9 @@ export function CallOverlay({
           intentionalScreenStop.current = false;
         }
       })
-      // Intentionally NOT listening to TrackMuted/Unmuted — those fire too often
-      // and were freezing the tab. Mute UI updates from local toggles + rare peer refresh.
+      // Throttled mute sync so remote "muted" badges stay accurate (Discord-like)
+      .on(RoomEvent.TrackMuted, () => schedulePeers())
+      .on(RoomEvent.TrackUnmuted, () => schedulePeers())
       .on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
         if (!participant.isLocal && track.kind === Track.Kind.Audio) {
           attachRemoteAudio(track as RemoteTrack, participant.identity);
@@ -1245,6 +1295,7 @@ export function CallOverlay({
       peerVolumesRef.current = next;
       return next;
     });
+    setPeerVolume(peerId, volume);
     applyPeerVolume(peerId, volume);
   }
 
@@ -1329,6 +1380,33 @@ export function CallOverlay({
       /* browser blocked */
     }
   }
+
+  // Discord chrome: UserBar / VoiceConnectedBar need these outside the overlay
+  useEffect(() => {
+    if (!onVoiceControls) return;
+    onVoiceControls({
+      micOn,
+      camOn,
+      screenOn,
+      deafened,
+      connected: status === "live",
+      toggleMic: () => {
+        void toggleMic();
+      },
+      toggleDeafen: () => {
+        void toggleDeafen();
+      },
+      toggleScreen: () => {
+        void toggleScreen();
+      },
+      toggleCam: () => {
+        void toggleCam();
+      },
+    });
+    return () => onVoiceControls(null);
+    // Intentionally omit toggle fns — they close over latest room via refs/state
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [micOn, camOn, screenOn, deafened, status, onVoiceControls]);
 
   const live = status === "live";
   const focusedPeer =
@@ -1827,7 +1905,12 @@ export function CallOverlay({
             type="button"
             title={pttMode ? "Switch to voice activity" : "Push to talk"}
             disabled={!live || deafened}
-            onClick={() => setPttMode((v) => !v)}
+            onClick={() => {
+              const next = !pttMode;
+              setPttMode(next);
+              setPushToTalk(next);
+              toast(next ? "Push to talk on" : "Voice activity on");
+            }}
             className={cn(
               "flex h-12 items-center rounded-full px-3 text-[11px] font-medium transition-colors disabled:opacity-50",
               pttMode
@@ -2199,6 +2282,15 @@ const PeerTile = function PeerTile({
                 {Math.round(volume * 100)}
               </span>
             </label>
+            <button
+              type="button"
+              className="mt-2 w-full rounded-lg bg-white/5 px-2 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10"
+              onClick={() => {
+                onVolumeChange(volume > 0 ? 0 : 1);
+              }}
+            >
+              {volume > 0 ? "Mute user" : "Unmute user"}
+            </button>
           </div>
         </>
       )}

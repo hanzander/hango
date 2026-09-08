@@ -36,6 +36,7 @@ import { playJoinSound, playLeaveSound, unlockAudio } from "@/lib/call-sounds";
 import { refreshMediaDevices } from "@/lib/media-devices";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
+import type { VoiceControls } from "./CallOverlay";
 
 const CallOverlay = dynamic(
   () => import("./CallOverlay").then((m) => m.CallOverlay),
@@ -239,9 +240,18 @@ export function AppShell({
     {},
   );
   const [liveRoster, setLiveRoster] = useState<
-    { user_id: string; display_name: string }[]
+    {
+      user_id: string;
+      display_name: string;
+      micOn?: boolean;
+      camOn?: boolean;
+      screenOn?: boolean;
+    }[]
   >([]);
   const [speakingIds, setSpeakingIds] = useState<string[]>([]);
+  const [voiceControls, setVoiceControls] = useState<VoiceControls | null>(
+    null,
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
@@ -347,6 +357,7 @@ export function AppShell({
     setVoiceSession(null);
     setLiveRoster([]);
     setSpeakingIds([]);
+    setVoiceControls(null);
   }, []);
   const handleCallLeave = useCallback(() => {
     endVoiceSession();
@@ -356,13 +367,24 @@ export function AppShell({
     setCallKey((k) => k + 1);
   }, [endVoiceSession]);
   const handleRemoteRoster = useCallback(
-    (peers: { user_id: string; display_name: string }[]) => {
+    (
+      peers: {
+        user_id: string;
+        display_name: string;
+        micOn?: boolean;
+        camOn?: boolean;
+        screenOn?: boolean;
+      }[],
+    ) => {
       setLiveRoster(peers);
     },
     [],
   );
   const handleSpeakingChange = useCallback((ids: string[]) => {
     setSpeakingIds(ids);
+  }, []);
+  const handleVoiceControls = useCallback((controls: VoiceControls | null) => {
+    setVoiceControls(controls);
   }, []);
   const handleProfileSaved = useCallback(
     (next: Profile) => {
@@ -572,6 +594,28 @@ export function AppShell({
     enabled: !demo && Boolean(userId),
   });
 
+  const voiceMedia = useMemo(() => {
+    const map: Record<
+      string,
+      { micOn?: boolean; camOn?: boolean; screenOn?: boolean }
+    > = {};
+    for (const p of liveRoster) {
+      map[p.user_id] = {
+        micOn: p.micOn,
+        camOn: p.camOn,
+        screenOn: p.screenOn,
+      };
+    }
+    if (userId && voiceControls) {
+      map[userId] = {
+        micOn: voiceControls.micOn && !voiceControls.deafened,
+        camOn: voiceControls.camOn,
+        screenOn: voiceControls.screenOn,
+      };
+    }
+    return map;
+  }, [liveRoster, userId, voiceControls]);
+
   const voiceOccupants = (() => {
     const map: typeof inVoiceByChannel = { ...inVoiceByChannel };
     if (inCall && voiceSession && userId) {
@@ -645,6 +689,8 @@ export function AppShell({
             hrefForChannel={hrefForChannel}
             homeHref={homeHref}
             voiceOccupants={voiceOccupants}
+            voiceMedia={voiceMedia}
+            speakingIds={speakingIds}
             unreadChannels={unreadChannels}
             mutedChannels={mutedChannels}
             serverMuted={serverMuted}
@@ -690,6 +736,18 @@ export function AppShell({
                   : `/app/${server.id}/${voiceSession.channelId}`
               }
               connected={callConnected}
+              micOn={voiceControls?.micOn ?? true}
+              deafened={voiceControls?.deafened ?? false}
+              screenOn={voiceControls?.screenOn ?? false}
+              onToggleMic={
+                voiceControls ? () => voiceControls.toggleMic() : undefined
+              }
+              onToggleDeafen={
+                voiceControls ? () => voiceControls.toggleDeafen() : undefined
+              }
+              onToggleScreen={
+                voiceControls ? () => voiceControls.toggleScreen() : undefined
+              }
               onDisconnect={disconnectVoice}
             />
           )}
@@ -700,6 +758,15 @@ export function AppShell({
             customStatus={localCustomStatus}
             onSignOut={onSignOut}
             onOpenSettings={demo ? undefined : () => setSettingsOpen(true)}
+            inCall={inCall}
+            micOn={voiceControls?.micOn ?? true}
+            deafened={voiceControls?.deafened ?? false}
+            onToggleMic={
+              voiceControls ? () => voiceControls.toggleMic() : undefined
+            }
+            onToggleDeafen={
+              voiceControls ? () => voiceControls.toggleDeafen() : undefined
+            }
           />
         </div>
       </div>
@@ -753,6 +820,7 @@ export function AppShell({
                 onLeave={handleCallLeave}
                 onRemoteRoster={handleRemoteRoster}
                 onSpeakingChange={handleSpeakingChange}
+                onVoiceControls={handleVoiceControls}
               />
             </CallErrorBoundary>
           </div>
@@ -1087,6 +1155,7 @@ const MemoCallSlot = memo(function MemoCallSlot({
   onLeave,
   onRemoteRoster,
   onSpeakingChange,
+  onVoiceControls,
 }: {
   channelId: string;
   callKey: number;
@@ -1100,9 +1169,16 @@ const MemoCallSlot = memo(function MemoCallSlot({
   onDisconnected: () => void;
   onLeave: () => void;
   onRemoteRoster: (
-    peers: { user_id: string; display_name: string }[],
+    peers: {
+      user_id: string;
+      display_name: string;
+      micOn?: boolean;
+      camOn?: boolean;
+      screenOn?: boolean;
+    }[],
   ) => void;
   onSpeakingChange: (ids: string[]) => void;
+  onVoiceControls: (controls: VoiceControls | null) => void;
 }) {
   return (
     <CallOverlay
@@ -1119,6 +1195,7 @@ const MemoCallSlot = memo(function MemoCallSlot({
       onLeave={onLeave}
       onRemoteRoster={onRemoteRoster}
       onSpeakingChange={onSpeakingChange}
+      onVoiceControls={onVoiceControls}
     />
   );
 });

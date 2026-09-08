@@ -12,6 +12,12 @@ type UserBarProps = {
   customStatus?: string | null;
   onSignOut?: () => void;
   onOpenSettings?: () => void;
+  /** Discord-style mute/deafen while in a call */
+  inCall?: boolean;
+  micOn?: boolean;
+  deafened?: boolean;
+  onToggleMic?: () => void;
+  onToggleDeafen?: () => void;
 };
 
 const STATUS_LABEL: Record<UserStatus, string> = {
@@ -35,6 +41,11 @@ export function UserBar({
   customStatus,
   onSignOut,
   onOpenSettings,
+  inCall,
+  micOn = true,
+  deafened = false,
+  onToggleMic,
+  onToggleDeafen,
 }: UserBarProps) {
   const [mentionsOnly, setMentionsOnly] = useState(() => {
     try {
@@ -66,12 +77,36 @@ export function UserBar({
             {displayName}
           </p>
           <p className="truncate text-[11px] leading-tight text-text-muted">
-            {customStatus || STATUS_LABEL[status]}
+            {inCall
+              ? deafened
+                ? "Deafened"
+                : !micOn
+                  ? "Muted"
+                  : "Voice connected"
+              : customStatus || STATUS_LABEL[status]}
           </p>
         </div>
       </button>
 
       <div className="flex shrink-0 items-center gap-0.5">
+        {inCall && onToggleMic && (
+          <IconBtn
+            title={micOn && !deafened ? "Mute" : "Unmute"}
+            active={!micOn || deafened}
+            onClick={onToggleMic}
+          >
+            <MicIcon off={!micOn || deafened} />
+          </IconBtn>
+        )}
+        {inCall && onToggleDeafen && (
+          <IconBtn
+            title={deafened ? "Undeafen" : "Deafen"}
+            active={deafened}
+            onClick={onToggleDeafen}
+          >
+            <HeadIcon off={deafened} />
+          </IconBtn>
+        )}
         <IconBtn
           title={
             mentionsOnly
@@ -132,6 +167,54 @@ function IconBtn({
     >
       {children}
     </button>
+  );
+}
+
+function MicIcon({ off }: { off?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
+      {off ? (
+        <path
+          d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V6a3 3 0 0 0-5.94-.6M17.74 14.06A7 7 0 0 1 5 11m7 7v3M2 2l20 20"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+        />
+      ) : (
+        <path
+          d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11a7 7 0 0 0 14 0M12 18v3"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
+  );
+}
+
+function HeadIcon({ off }: { off?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
+      <path
+        d="M4 13v3a2 2 0 0 0 2 2h1v-7H6a2 2 0 0 0-2 2ZM17 11h1a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-1v-7Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <path
+        d="M4 13a8 8 0 0 1 16 0"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+      {off && (
+        <path
+          d="M3 3l18 18"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
   );
 }
 

@@ -1,8 +1,10 @@
 /**
- * Voice UI preferences (sticky devices + noise suppression).
+ * Voice UI preferences (sticky devices, NS, PTT, volumes).
  */
 
 const NS_KEY = "hango-voice-ns";
+const PTT_KEY = "hango-voice-ptt";
+const VOLUMES_KEY = "hango-voice-peer-volumes";
 const deviceKey = (kind: MediaDeviceKind) => `hango-device-${kind}`;
 
 export function getNoiseSuppression(): boolean {
@@ -13,6 +15,38 @@ export function getNoiseSuppression(): boolean {
 export function setNoiseSuppression(on: boolean) {
   if (typeof window === "undefined") return;
   localStorage.setItem(NS_KEY, on ? "1" : "0");
+}
+
+export function getPushToTalk(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(PTT_KEY) === "1";
+}
+
+export function setPushToTalk(on: boolean) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PTT_KEY, on ? "1" : "0");
+}
+
+export function getPeerVolumes(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(VOLUMES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function setPeerVolume(peerId: string, volume: number) {
+  if (typeof window === "undefined" || !peerId) return;
+  try {
+    const next = { ...getPeerVolumes(), [peerId]: volume };
+    localStorage.setItem(VOLUMES_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
 }
 
 export function getStickyDevice(kind: MediaDeviceKind): string | null {
