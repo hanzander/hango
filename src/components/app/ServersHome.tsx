@@ -216,14 +216,6 @@ export function ServersHome({
               >
                 Create / join server
               </button>
-              <Link
-                href="/"
-                role="menuitem"
-                onClick={() => setAccountOpen(false)}
-                className="mx-1 flex items-center rounded-lg px-2.5 py-2 text-sm text-text-secondary transition hover:bg-bg-hover hover:text-text"
-              >
-                Marketing site
-              </Link>
               {onSignOut && (
                 <>
                   <div className="mx-2 my-1 border-t border-border" />
