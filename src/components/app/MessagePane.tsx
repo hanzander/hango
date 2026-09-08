@@ -12,6 +12,7 @@ import type { Message, MessageAttachment, MessageEmbed } from "@/lib/types";
 import {
   formatMessageDateDivider,
   formatMessageTime,
+  formatMessageTimeShort,
   sameCalendarDay,
   cn,
 } from "@/lib/utils";
@@ -244,7 +245,7 @@ export function MessagePane({
 
       <div
         ref={scrollerRef}
-        className="hango-scroll relative flex-1 overflow-y-auto px-4 py-4"
+        className="hango-scroll relative flex-1 overflow-y-auto px-0 py-2"
       >
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-text-muted">
@@ -281,8 +282,8 @@ export function MessagePane({
                   {showDate && (
                     <div
                       className={cn(
-                        "mb-2 flex items-center gap-3",
-                        i > 0 && "mt-4",
+                        "mx-4 mb-1.5 flex items-center gap-2",
+                        i > 0 && "mt-3",
                       )}
                       role="separator"
                       aria-label={formatMessageDateDivider(message.created_at)}
@@ -446,18 +447,18 @@ function MessageRow({
   return (
     <div
       className={cn(
-        "hango-msg group relative grid grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-x-3 rounded-xl px-2 py-0.5 transition-colors duration-150 hover:bg-white/[0.035]",
-        grouped ? "mt-0" : "mt-2",
+        // Discord cozy density: 40px avatar column, 16px gap, tight line-height
+        "hango-msg group relative grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-4 px-4 transition-colors duration-75 hover:bg-white/[0.03]",
+        grouped ? "mt-0 min-h-[1.375rem] py-px" : "mt-[1.0625rem] py-0.5",
         message.pinned_at && "bg-amber-500/[0.05]",
       )}
-      style={{ alignItems: "start" }}
     >
-      <div className="self-start pt-0.5">
+      <div className="relative flex justify-center self-start">
         {!grouped ? (
           <button
             type="button"
             onClick={onOpenProfile}
-            className="block h-10 w-10 shrink-0 overflow-hidden rounded-full p-0 leading-none transition hover:opacity-90"
+            className="mt-0.5 block h-10 w-10 shrink-0 overflow-hidden rounded-full p-0 leading-none transition hover:opacity-90"
           >
             <Avatar
               name={name}
@@ -466,7 +467,12 @@ function MessageRow({
             />
           </button>
         ) : (
-          <div className="h-10 w-10" aria-hidden />
+          <time
+            className="mt-0.5 hidden w-10 select-none text-center text-[10px] leading-[1.375rem] text-text-muted group-hover:block"
+            dateTime={message.created_at}
+          >
+            {formatMessageTimeShort(message.created_at)}
+          </time>
         )}
       </div>
       <div className="min-w-0">
@@ -474,7 +480,7 @@ function MessageRow({
           <button
             type="button"
             onClick={onReply}
-            className="mb-1 flex max-w-full items-center gap-1 truncate text-[11px] text-text-muted hover:text-text-secondary"
+            className="mb-0.5 flex max-w-full items-center gap-1 truncate text-[11px] leading-[1.2] text-text-muted hover:text-text-secondary"
           >
             <span className="opacity-60">↳</span>
             <span className="font-medium">
@@ -486,15 +492,15 @@ function MessageRow({
           </button>
         )}
         {!grouped && (
-          <div className="mb-0.5 flex h-5 items-baseline gap-2 leading-none">
+          <div className="flex items-baseline gap-1.5 leading-[1.375]">
             <button
               type="button"
               onClick={onOpenProfile}
-              className="text-[15px] font-semibold leading-5 text-text hover:underline"
+              className="text-[1rem] font-medium leading-[1.375] text-text hover:underline"
             >
               {name}
             </button>
-            <time className="text-[11px] leading-5 text-text-muted">
+            <time className="text-[0.6875rem] leading-[1.375] text-text-muted">
               {formatMessageTime(message.created_at)}
             </time>
             {message.edited_at && (
@@ -505,11 +511,6 @@ function MessageRow({
             )}
           </div>
         )}
-        {!grouped && message.author?.custom_status ? (
-          <p className="mb-0.5 truncate text-[11px] leading-snug text-text-muted">
-            {message.author.custom_status}
-          </p>
-        ) : null}
 
         {editing ? (
           <div className="mt-1 space-y-2">
@@ -546,19 +547,14 @@ function MessageRow({
           </div>
         ) : (
           message.content && (
-            <p
-              className={cn(
-                "whitespace-pre-wrap break-words text-[15px] leading-relaxed text-zinc-200",
-                !grouped && "mt-0.5",
-              )}
-            >
+            <div className="whitespace-pre-wrap break-words text-[1rem] leading-[1.375] text-[#dbdee1]">
               <FormattedText text={message.content} />
-            </p>
+            </div>
           )
         )}
 
         {(message.attachments?.length ?? 0) > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-2">
+          <div className="mt-1 flex flex-wrap gap-2">
             {message.attachments!.map((a) => {
               const isImage = (a.content_type || "").startsWith("image/") ||
                 /\.(png|jpe?g|gif|webp|avif)$/i.test(a.filename);
@@ -597,7 +593,7 @@ function MessageRow({
         {liveEmbed && <LinkEmbedCard embed={liveEmbed} />}
 
         {(message.reactions?.length ?? 0) > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1">
+          <div className="mt-1 flex flex-wrap gap-1">
             {[...reactionMap.entries()].map(([emoji, info]) => (
               <button
                 key={emoji}
@@ -619,11 +615,11 @@ function MessageRow({
 
       <div
         className={cn(
-          "absolute -top-3.5 right-3 z-10 flex items-center gap-0.5 rounded-lg border border-border-strong",
+          "absolute -top-3 right-4 z-10 flex items-center gap-0.5 rounded-md border border-border-strong",
           "bg-[#1c1a18]/95 p-0.5 shadow-[0_10px_28px_rgba(0,0,0,0.5)] backdrop-blur-md",
-          "opacity-0 translate-y-1 scale-[0.98] transition-all duration-150",
-          "group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100",
-          "focus-within:translate-y-0 focus-within:scale-100 focus-within:opacity-100",
+          "opacity-0 transition-opacity duration-100",
+          "group-hover:opacity-100",
+          "focus-within:opacity-100",
         )}
       >
         {QUICK_EMOJIS.map((e) => (
@@ -718,7 +714,7 @@ function FormattedText({ text }: { text: string }) {
             return (
               <span
                 key={i}
-                className="rounded bg-accent/20 px-1 text-accent"
+                className="rounded px-0.5 font-medium text-[#c9cdfb] [background:color-mix(in_srgb,#5865f2_30%,transparent)]"
               >
                 {s.value}
               </span>

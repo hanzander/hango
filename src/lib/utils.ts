@@ -32,6 +32,15 @@ export function formatMessageTime(iso: string) {
   })} ${time}`;
 }
 
+/** Discord-style compact time in the avatar gutter on hover (grouped messages) */
+export function formatMessageTimeShort(iso: string) {
+  const date = new Date(iso);
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function sameCalendarDay(aIso: string, bIso: string) {
   const a = new Date(aIso);
   const b = new Date(bIso);
