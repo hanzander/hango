@@ -78,9 +78,10 @@ export function ServerBannerModal({
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase().slice(0, 5);
     const path = `${server.id}/banner-${Date.now()}.${ext}`;
 
+    // Use server-emoji bucket — already has working auth upload policies.
     const { error: upErr } = await supabase.storage
-      .from("server-media")
-      .upload(path, file, { upsert: true, contentType: file.type });
+      .from("server-emoji")
+      .upload(path, file, { upsert: false, contentType: file.type });
 
     if (upErr) {
       setBusy(false);
@@ -89,7 +90,7 @@ export function ServerBannerModal({
     }
 
     const { data: pub } = supabase.storage
-      .from("server-media")
+      .from("server-emoji")
       .getPublicUrl(path);
     const banner_url = `${pub.publicUrl}?t=${Date.now()}`;
 
@@ -100,12 +101,7 @@ export function ServerBannerModal({
 
     setBusy(false);
     if (error) {
-      toast(
-        /banner_url|column/i.test(error.message)
-          ? "Run migration 010 to add banner_url on servers"
-          : error.message,
-        "danger",
-      );
+      toast(error.message, "danger");
       return;
     }
 
