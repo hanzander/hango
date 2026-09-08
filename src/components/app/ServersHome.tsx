@@ -144,34 +144,42 @@ export function ServersHome({
         }}
       />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-3xl items-center justify-between px-6 py-6">
-        <Link
-          href="/"
-          className="text-lg font-semibold tracking-tight text-text transition-opacity hover:opacity-80"
-        >
-          hango
-        </Link>
-        <div className="flex items-center gap-3">
+      <header className="relative z-10 mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-6 py-6">
+        <div className="flex min-w-0 items-center gap-4">
+          <Link
+            href="/"
+            className="text-lg font-semibold tracking-tight text-text transition-opacity hover:opacity-80"
+          >
+            hango
+          </Link>
           <Link
             href="/app/friends"
             className="text-sm text-text-muted transition-colors hover:text-text"
           >
             Friends
           </Link>
-          {onSignOut ? (
-            <button
-              type="button"
-              onClick={() => setSayingBye(true)}
-              title={`Log out · ${displayName}`}
-              aria-label={`Log out of ${displayName}`}
-              className="rounded-full ring-1 ring-transparent transition hover:opacity-90 hover:ring-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <Avatar name={displayName} src={avatarUrl} size="sm" />
-            </button>
-          ) : (
-            <Avatar name={displayName} src={avatarUrl} size="sm" />
-          )}
         </div>
+        {onSignOut ? (
+          <button
+            type="button"
+            onClick={() => setSayingBye(true)}
+            title="Log out"
+            aria-label={`Log out (${displayName})`}
+            className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Avatar
+              name={displayName}
+              src={avatarUrl}
+              size="sm"
+              className="transition ring-1 ring-white/10 group-hover:ring-white/35"
+            />
+            <span className="pointer-events-none absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted opacity-0 shadow-lg ring-1 ring-border transition group-hover:opacity-100">
+              Log out
+            </span>
+          </button>
+        ) : (
+          <Avatar name={displayName} src={avatarUrl} size="sm" />
+        )}
       </header>
 
       <main className="hango-servers-in relative z-10 mx-auto w-full max-w-3xl px-6 pb-24 pt-6 md:pt-10">
