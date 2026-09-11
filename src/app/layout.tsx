@@ -18,6 +18,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Hango",
   description: "Clean, minimal chat for people who hang out.",
+  icons: {
+    icon: [{ url: "/brand/mark.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/brand/icon.png" }],
+  },
+  openGraph: {
+    title: "Hango",
+    description: "Clean, minimal chat for people who hang out.",
+    images: [{ url: "/brand/icon.png" }],
+  },
 };
 
 function livekitPreconnectOrigin() {

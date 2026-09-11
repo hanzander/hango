@@ -1,6 +1,7 @@
 "use client";
 
 import { ServerActionsModal } from "@/components/app/ServerActionsModal";
+import { HangoMark } from "@/components/brand/HangoLogo";
 import { enterServerNow } from "@/lib/leave-server";
 import { useState } from "react";
 
@@ -9,9 +10,7 @@ export function EmptyServersHome({ displayName }: { displayName: string }) {
 
   return (
     <div className="flex h-dvh flex-col items-center justify-center bg-bg px-6 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-xl font-semibold text-accent-fg">
-        H
-      </div>
+      <HangoMark size={56} className="mb-4 rounded-2xl" />
       <h1 className="text-2xl font-semibold tracking-tight text-text">
         Welcome{displayName ? `, ${displayName}` : ""}
       </h1>

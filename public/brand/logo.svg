@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 40" fill="none" role="img" aria-label="Hango">
+  <rect x="0" y="0" width="40" height="40" rx="10" fill="#141312"/>
+  <path
+    d="M9.2 13.2c0-2.05 1.65-3.7 3.7-3.7h5.85c2.05 0 3.7 1.65 3.7 3.7v4.7c0 2.05-1.65 3.7-3.7 3.7h-2.85l-3.05 2.35c-.4.3-.95.03-.95-.48v-1.87c-.95-.4-1.6-1.35-1.6-2.4v-6Z"
+    fill="#EDE4D6"
+  />
+  <path
+    d="M15.2 16c0-1.85 1.5-3.35 3.35-3.35H24.7c1.85 0 3.35 1.5 3.35 3.35v4.25c0 1.85-1.5 3.35-3.35 3.35h-3.2l-2.65 2.05c-.37.28-.88.03-.88-.45v-1.6c-.85-.38-1.4-1.22-1.4-2.2V16Z"
+    fill="#F4EFE6"
+  />
+  <circle cx="20" cy="28.8" r="1.85" fill="#D4A574"/>
+  <text
+    x="52"
+    y="27"
+    fill="#F4F4F5"
+    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
+    font-size="22"
+    font-weight="600"
+    letter-spacing="-0.04em"
+  >hango</text>
+</svg>

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Friendship, Profile } from "@/lib/types";
 import { Avatar } from "@/components/ui/Avatar";
+import { HangoLogo } from "@/components/brand/HangoLogo";
 import { useToast } from "@/components/ui/Toast";
 import { isSupabaseConfigured } from "@/lib/utils";
 
@@ -120,8 +121,8 @@ export function FriendsHome({
   return (
     <div className="relative min-h-dvh bg-bg text-text">
       <header className="mx-auto flex w-full max-w-2xl items-center justify-between px-6 py-6">
-        <Link href="/app" className="text-lg font-semibold tracking-tight">
-          hango
+        <Link href="/app" className="transition-opacity hover:opacity-80">
+          <HangoLogo size={28} />
         </Link>
         <p className="text-sm text-text-muted">{displayName}</p>
       </header>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/utils";
+import { HangoLogo, HangoMark } from "@/components/brand/HangoLogo";
 
 export default async function HomePage() {
   if (isSupabaseConfigured()) {
@@ -63,11 +64,8 @@ export default async function HomePage() {
       />
 
       <header className="relative z-10 mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-6">
-        <Link
-          href="/"
-          className="text-lg font-semibold tracking-tight text-text transition-opacity hover:opacity-80"
-        >
-          hango
+        <Link href="/" className="transition-opacity hover:opacity-80">
+          <HangoLogo size={30} />
         </Link>
         <Link
           href="/login"
@@ -130,9 +128,7 @@ export default async function HomePage() {
             <div className="flex h-[280px] md:h-[340px]">
               {/* Server rail */}
               <div className="hango-rail-wash hidden w-[68px] shrink-0 flex-col items-center gap-2 border-r border-border py-3 sm:flex">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-sm font-semibold text-accent-fg">
-                  H
-                </div>
+                <HangoMark size={40} className="rounded-xl" />
                 <div className="h-px w-8 bg-border-strong" />
                 <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-bg-active text-xs font-medium text-text ring-1 ring-border-strong">
                   <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-accent" />

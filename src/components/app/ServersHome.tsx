@@ -18,6 +18,7 @@ import { AuthMoment } from "@/components/auth/AuthMoment";
 import { armAuthCover } from "@/lib/auth-cover";
 import { getServerEnterHref } from "@/lib/app-cache";
 import { enterServerNow } from "@/lib/leave-server";
+import { HangoLogo } from "@/components/brand/HangoLogo";
 
 type ServersHomeProps = {
   displayName: string;
@@ -163,11 +164,8 @@ export function ServersHome({
       />
 
       <header className="relative z-30 mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-6 py-6">
-        <Link
-          href="/"
-          className="text-lg font-semibold tracking-tight text-text transition-opacity hover:opacity-80"
-        >
-          hango
+        <Link href="/" className="transition-opacity hover:opacity-80">
+          <HangoLogo size={28} />
         </Link>
         <div ref={accountRef} className="relative shrink-0">
           <button
