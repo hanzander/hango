@@ -70,10 +70,10 @@ export default async function HomePage() {
             ut with your people
           </h1>
 
-          <div className="mt-10 flex flex-wrap items-end gap-3 sm:gap-4">
+          <div className="relative mt-10">
             <div
               aria-hidden
-              className="mb-0.5 flex shrink-0 select-none flex-col items-start"
+              className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 flex select-none flex-col items-start"
             >
               <p
                 className="-mb-0.5 rotate-[-6deg] text-[1.5rem] leading-none tracking-wide text-zinc-400/80"
