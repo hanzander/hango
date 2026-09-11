@@ -74,7 +74,7 @@ export default async function HomePage() {
             {/* Left of Get started — absolute so the button never shifts */}
             <div
               aria-hidden
-              className="pointer-events-none absolute left-0 top-1/2 z-10 hidden -translate-x-[calc(100%+0.35rem)] -translate-y-[58%] select-none sm:block"
+              className="pointer-events-none absolute left-0 top-1/2 z-10 hidden -translate-x-[calc(100%-0.35rem)] -translate-y-[55%] select-none sm:block"
             >
               <p
                 className="rotate-[-8deg] whitespace-nowrap text-[1.4rem] leading-none tracking-wide text-zinc-400/80"
@@ -83,22 +83,24 @@ export default async function HomePage() {
                 come hang
               </p>
               <svg
-                width="72"
+                width="76"
                 height="44"
-                viewBox="0 0 72 44"
+                viewBox="0 0 76 44"
                 fill="none"
-                className="ml-4 mt-0.5 text-zinc-400/75"
+                className="ml-3 mt-1 text-zinc-400/80"
               >
+                {/* curve from under the note toward the button */}
                 <path
-                  d="M5 7c17 4 34 13 50 29"
+                  d="M6 8c18 2 36 8 52 20"
                   stroke="currentColor"
-                  strokeWidth="1.75"
+                  strokeWidth="1.85"
                   strokeLinecap="round"
                 />
+                {/* chevron tip pointing right into Get started */}
                 <path
-                  d="M40 24l16 14 4-16"
+                  d="M46 16l16 14-16 10"
                   stroke="currentColor"
-                  strokeWidth="1.75"
+                  strokeWidth="1.85"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
