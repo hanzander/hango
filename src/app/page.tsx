@@ -66,17 +66,13 @@ export default async function HomePage() {
       {/* One composition: copy + live product feel */}
       <main className="relative z-10 mx-auto grid min-h-[calc(100dvh-4.5rem)] w-full max-w-6xl items-center gap-10 px-6 pb-10 pt-6 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.15fr)] md:gap-12 md:px-8 md:pb-14 md:pt-4">
         <div className="hango-landing-in relative z-10 max-w-lg">
-          <p className="text-sm font-medium tracking-wide text-text-muted">
-            Chat for late nights
-          </p>
-          <h1 className="mt-4 text-[clamp(3rem,9vw,4.75rem)] font-semibold leading-[0.95] tracking-tight text-text">
-            hango
+          <h1 className="max-w-md text-[clamp(1.35rem,3.6vw,1.85rem)] font-medium leading-snug tracking-tight text-text-secondary">
+            a calm place to{" "}
+            <span className="font-semibold text-[#E0A86A]">hango</span>
+            ut with your people
           </h1>
-          <p className="mt-5 max-w-sm text-base leading-relaxed text-text-secondary md:text-lg">
-            A calm place to hangout with your people — text, voice, and screens
-            without the noise.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
+
+          <div className="mt-10 flex flex-wrap items-center gap-3">
             <Link
               href="/signup"
               className="hango-interactive inline-flex rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg"

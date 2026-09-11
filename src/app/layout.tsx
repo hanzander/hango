@@ -17,14 +17,17 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Hango",
-  description: "Clean, minimal chat for people who hang out.",
+  description: "A calm place to hangout with your people.",
   icons: {
-    icon: [{ url: "/brand/mark.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/brand/icon.png" }],
+    icon: [
+      { url: "/brand/icon.png", type: "image/png" },
+      { url: "/brand/mark.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/brand/apple-touch-icon.png" }],
   },
   openGraph: {
     title: "Hango",
-    description: "Clean, minimal chat for people who hang out.",
+    description: "A calm place to hangout with your people.",
     images: [{ url: "/brand/icon.png" }],
   },
 };
