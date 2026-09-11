@@ -13,8 +13,8 @@ type HangoLogoProps = {
 };
 
 /**
- * Premium iOS-style hangout mark (speech bubbles + warm lamp).
- * Uses the polished raster icon so it reads like a real app icon.
+ * Soft hangout mark — warm tile, cream bubble, amber ember.
+ * Raster icon for favicon/rails; SVG preferred for crisp logo lockups.
  */
 export function HangoMark({
   className,
@@ -27,7 +27,7 @@ export function HangoMark({
       alt={title}
       width={size}
       height={size}
-      className={cn("shrink-0 rounded-[22%]", className)}
+      className={cn("shrink-0 rounded-[22%] shadow-[0_6px_18px_rgba(0,0,0,0.35)]", className)}
       priority
     />
   );
@@ -47,8 +47,8 @@ export function HangoLogo({
       <HangoMark size={size} title={title} />
       {withWordmark && (
         <span
-          className="leading-none font-semibold tracking-tight text-text"
-          style={{ fontSize: Math.round(size * 0.52) }}
+          className="leading-none font-semibold tracking-[-0.03em] text-[#E8DFD4]"
+          style={{ fontSize: Math.round(size * 0.5) }}
         >
           hango
         </span>

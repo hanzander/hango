@@ -1,7 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 40" fill="none" role="img" aria-label="Hango">
-  <rect width="40" height="40" rx="10" fill="#1C1917"/>
-  <rect x="0.9" y="0.9" width="38.2" height="38.2" rx="9.1" stroke="#3A3530" stroke-width="1.8"/>
-  <path d="M12.2 10.2c0-.85.7-1.55 1.55-1.55s1.55.7 1.55 1.55v7c.85-.95 2.1-1.5 3.45-1.5 3.15 0 5.6 2.45 5.6 5.6v7.7c0 .85-.7 1.55-1.55 1.55s-1.55-.7-1.55-1.55v-6.7c0-1.55-1.25-2.8-2.8-2.8s-2.8 1.25-2.8 2.8v6.7c0 .85-.7 1.55-1.55 1.55s-1.55-.7-1.55-1.55V10.2Z" fill="#F5F0E8"/>
-  <circle cx="26.6" cy="15" r="2.1" fill="#E0A86A"/>
-  <text x="50" y="27" fill="#F4F4F5" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="22" font-weight="600" letter-spacing="-0.04em">hango</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 44" fill="none" role="img" aria-label="Hango">
+  <defs>
+    <linearGradient id="tile" x1="8" y1="2" x2="36" y2="42" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2A221C"/>
+      <stop offset="1" stop-color="#15110E"/>
+    </linearGradient>
+    <linearGradient id="bubble" x1="14" y1="10" x2="28" y2="34" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F6EFE4"/>
+      <stop offset="1" stop-color="#E2D4C2"/>
+    </linearGradient>
+    <radialGradient id="ember" cx="22" cy="34" r="10" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E8B57A" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#E8B57A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="2" y="2" width="40" height="40" rx="11" fill="url(#tile)"/>
+  <circle cx="22" cy="32" r="9" fill="url(#ember)"/>
+  <path d="M11 17.2c0-3.9 3.1-7 7-7h4.8c3.9 0 7 3.1 7 7v4.6c0 3.9-3.1 7-7 7H19.4l-4.4 3.3c-.55.4-1.3 0-1.3-.7v-2.6c-1.7-.7-2.9-2.3-2.9-4.2v-5.4Z" fill="url(#bubble)"/>
+  <ellipse cx="31" cy="14.5" rx="3.4" ry="2.9" fill="#F3E8D8" opacity="0.9"/>
+  <circle cx="22" cy="34.5" r="2.15" fill="#E0A86A"/>
+  <circle cx="22" cy="33.9" r="0.9" fill="#F6D7A8" opacity="0.85"/>
+  <text x="52" y="29" fill="#E8DFD4" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="22" font-weight="600" letter-spacing="-0.03em">hango</text>
 </svg>

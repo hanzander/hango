@@ -83,29 +83,26 @@ export default async function HomePage() {
                 come hang
               </p>
               <svg
-                width="56"
-                height="34"
-                viewBox="0 0 56 34"
+                width="52"
+                height="42"
+                viewBox="0 0 52 42"
                 fill="none"
-                className="ml-7 mt-0.5 text-zinc-400/70"
+                className="ml-8 mt-0.5 text-zinc-400/75"
               >
+                {/* single curved shaft */}
                 <path
-                  d="M6 2c8 4 14 11 16 22"
+                  d="M6 4c8 5 16 14 20 30"
                   stroke="currentColor"
-                  strokeWidth="1.65"
+                  strokeWidth="1.7"
                   strokeLinecap="round"
                 />
+                {/* clear open arrowhead pointing down-right */}
                 <path
-                  d="M16 18c3 3 7 6 12 7"
+                  d="M14 28l12 8 10-14"
                   stroke="currentColor"
-                  strokeWidth="1.65"
+                  strokeWidth="1.7"
                   strokeLinecap="round"
-                />
-                <path
-                  d="M22 16c2 5 3 9 2 12"
-                  stroke="currentColor"
-                  strokeWidth="1.65"
-                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
               </svg>
             </div>
