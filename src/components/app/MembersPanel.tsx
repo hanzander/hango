@@ -298,9 +298,9 @@ function MemberRow({
             )}
           />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="relative flex min-w-0 flex-1 flex-col justify-center leading-tight">
           <p
-            className="truncate text-sm font-medium transition-colors"
+            className="truncate text-sm font-medium leading-5 transition-colors"
             style={role ? { color: role.color } : undefined}
           >
             <span className={role ? undefined : "text-text"}>
@@ -308,17 +308,13 @@ function MemberRow({
             </span>
           </p>
           {member.inVoice ? (
-            <p className="flex items-center gap-1 truncate text-[10px] text-emerald-400/80">
+            <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] leading-3 text-emerald-400/80">
               <VoiceGlyph />
               Voice
             </p>
           ) : member.custom_status ? (
-            <p className="truncate text-[10px] text-text-muted">
+            <p className="mt-0.5 truncate text-[10px] leading-3 text-text-muted">
               {member.custom_status}
-            </p>
-          ) : role ? (
-            <p className="truncate text-[10px] text-text-muted opacity-0 transition group-hover:opacity-100">
-              {role.name}
             </p>
           ) : null}
         </div>

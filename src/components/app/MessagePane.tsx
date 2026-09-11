@@ -311,6 +311,7 @@ export function MessagePane({
                     currentUserId={currentUserId}
                     isOwn={message.author_id === currentUserId}
                     canManageMessages={canManageMessages}
+                    mentionNames={mentionNames}
                     editing={editingId === message.id}
                     editValue={editValue}
                     onEditValue={setEditValue}
@@ -400,6 +401,7 @@ function MessageRow({
   currentUserId,
   isOwn,
   canManageMessages,
+  mentionNames = [],
   editing,
   editValue,
   onEditValue,
@@ -419,6 +421,7 @@ function MessageRow({
   currentUserId?: string;
   isOwn: boolean;
   canManageMessages?: boolean;
+  mentionNames?: string[];
   editing: boolean;
   editValue: string;
   onEditValue: (v: string) => void;
