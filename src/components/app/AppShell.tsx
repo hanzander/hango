@@ -933,6 +933,10 @@ export function AppShell({
                 onPin={onPin}
                 onStartThread={onStartThread}
                 onOpenProfile={(id) => void openProfile(id)}
+                mentionNames={[
+                  ...serverMembers.map((m) => m.display_name),
+                  localName,
+                ].filter(Boolean)}
               />
               <MessageComposer
                 channelName={channel.name}

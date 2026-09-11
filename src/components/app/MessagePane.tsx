@@ -40,6 +40,8 @@ type MessagePaneProps = {
   onPin?: (messageId: string, pin: boolean) => Promise<void> | void;
   onOpenProfile?: (userId: string) => void;
   onStartThread?: (message: Message) => void;
+  /** Known member display names for accurate @mention highlighting */
+  mentionNames?: string[];
 };
 
 const NEAR_BOTTOM_PX = 160;
@@ -64,6 +66,7 @@ export function MessagePane({
   onPin,
   onOpenProfile,
   onStartThread,
+  mentionNames = [],
 }: MessagePaneProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -136,15 +139,22 @@ export function MessagePane({
   }, [channelId]);
 
   // After load / new messages / images: stay at bottom when pinned
+  // Always jump when *you* send (Discord-like)
   useLayoutEffect(() => {
     if (loading) return;
     const grew = messages.length > prevLen.current;
     const opened = prevLen.current === 0 && messages.length > 0;
     prevLen.current = messages.length;
 
-    if (opened || stickToBottom.current) {
+    const last = messages[messages.length - 1];
+    const ownSend =
+      grew &&
+      Boolean(currentUserId) &&
+      last?.author_id === currentUserId;
+
+    if (opened || stickToBottom.current || ownSend) {
+      if (ownSend) stickToBottom.current = true;
       scrollToBottom(opened || !grew ? "auto" : "smooth");
-      // Images/embeds can grow height after paint — nudge again
       requestAnimationFrame(() => {
         if (stickToBottom.current) scrollToBottom("auto");
       });
@@ -154,7 +164,7 @@ export function MessagePane({
       return;
     }
     if (grew) setShowJump(true);
-  }, [messages, loading, channelId, searchQuery, pinsOnly]);
+  }, [messages, loading, channelId, searchQuery, pinsOnly, currentUserId]);
 
   // Keep pinned when the scroller content resizes (image loads, etc.)
   useEffect(() => {
@@ -548,7 +558,7 @@ function MessageRow({
         ) : (
           message.content && (
             <div className="whitespace-pre-wrap break-words text-[1rem] leading-[1.375] text-[#dbdee1]">
-              <FormattedText text={message.content} />
+              <FormattedText text={message.content} mentionNames={mentionNames} />
             </div>
           )
         )}
@@ -687,8 +697,17 @@ function MessageRow({
   );
 }
 
-function FormattedText({ text }: { text: string }) {
-  const segs = parseDiscordMarkdown(text);
+function FormattedText({
+  text,
+  mentionNames = [],
+}: {
+  text: string;
+  mentionNames?: string[];
+}) {
+  const segs = useMemo(
+    () => parseDiscordMarkdown(text, mentionNames),
+    [text, mentionNames],
+  );
   return (
     <>
       {segs.map((s, i) => {
