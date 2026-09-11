@@ -43,10 +43,7 @@ export default async function HomePage() {
         }}
       />
 
-      <header className="relative z-20 mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5 md:px-8">
-        <Link href="/" className="transition-opacity hover:opacity-80">
-          <HangoLogo size={28} />
-        </Link>
+      <header className="relative z-20 mx-auto flex w-full max-w-6xl items-center justify-end px-6 py-5 md:px-8">
         <nav className="flex items-center gap-5">
           <Link
             href="/login"
@@ -66,25 +63,66 @@ export default async function HomePage() {
       {/* One composition: copy + live product feel */}
       <main className="relative z-10 mx-auto grid min-h-[calc(100dvh-4.5rem)] w-full max-w-6xl items-center gap-10 px-6 pb-10 pt-6 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.15fr)] md:gap-12 md:px-8 md:pb-14 md:pt-4">
         <div className="hango-landing-in relative z-10 max-w-lg">
+          <HangoLogo size={36} className="mb-6" />
           <h1 className="max-w-md text-[clamp(1.35rem,3.6vw,1.85rem)] font-medium leading-snug tracking-tight text-text-secondary">
             a calm place to{" "}
             <span className="font-semibold text-[#E0A86A]">hango</span>
             ut with your people
           </h1>
 
-          <div className="mt-10 flex flex-wrap items-center gap-3">
-            <Link
-              href="/signup"
-              className="hango-interactive inline-flex rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg"
+          <div className="mt-10 flex flex-wrap items-end gap-3 sm:gap-4">
+            <div
+              aria-hidden
+              className="mb-0.5 flex shrink-0 select-none flex-col items-start"
             >
-              Get started
-            </Link>
-            <Link
-              href="/login"
-              className="inline-flex rounded-lg px-4 py-2.5 text-sm font-medium text-text-secondary transition hover:bg-white/[0.04] hover:text-text"
-            >
-              I already have an account
-            </Link>
+              <p
+                className="-mb-0.5 rotate-[-6deg] text-[1.5rem] leading-none tracking-wide text-zinc-400/80"
+                style={{ fontFamily: "var(--font-hand), cursive" }}
+              >
+                come hang
+              </p>
+              <svg
+                width="78"
+                height="36"
+                viewBox="0 0 78 36"
+                fill="none"
+                className="ml-3 text-zinc-400/70"
+              >
+                <path
+                  d="M4 4c14 2 28 6 42 16 8 5 16 10 24 12"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M58 22c6 4 10 7 12 10"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M62 18c6 5 10 10 10 14"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href="/signup"
+                className="hango-interactive inline-flex rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg"
+              >
+                Get started
+              </Link>
+              <Link
+                href="/login"
+                className="inline-flex rounded-lg px-4 py-2.5 text-sm font-medium text-text-secondary transition hover:bg-white/[0.04] hover:text-text"
+              >
+                I already have an account
+              </Link>
+            </div>
           </div>
         </div>
 
