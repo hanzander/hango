@@ -41,14 +41,14 @@ export function HangoLogo({
 }: HangoLogoProps) {
   return (
     <span
-      className={cn("inline-flex items-center gap-2.5", className)}
+      className={cn("inline-flex items-center gap-3", className)}
       title={title}
     >
       <HangoMark size={size} title={title} />
       {withWordmark && (
         <span
-          className="font-semibold tracking-tight text-text"
-          style={{ fontSize: Math.round(size * 0.72) }}
+          className="leading-none font-semibold tracking-tight text-text"
+          style={{ fontSize: Math.round(size * 0.52) }}
         >
           hango
         </span>

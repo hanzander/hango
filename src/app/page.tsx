@@ -63,47 +63,48 @@ export default async function HomePage() {
       {/* One composition: copy + live product feel */}
       <main className="relative z-10 mx-auto grid min-h-[calc(100dvh-4.5rem)] w-full max-w-6xl items-center gap-10 px-6 pb-10 pt-6 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.15fr)] md:gap-12 md:px-8 md:pb-14 md:pt-4">
         <div className="hango-landing-in relative z-10 max-w-lg">
-          <HangoLogo size={36} className="mb-6" />
-          <h1 className="max-w-md text-[clamp(1.35rem,3.6vw,1.85rem)] font-medium leading-snug tracking-tight text-text-secondary">
+          <HangoLogo size={48} className="mb-8" />
+          <h1 className="max-w-md text-pretty text-[clamp(1.35rem,3.6vw,1.85rem)] font-medium leading-[1.35] tracking-tight text-text-secondary">
             a calm place to{" "}
             <span className="font-semibold text-[#E0A86A]">hango</span>
             ut with your people
           </h1>
 
-          <div className="relative mt-10">
+          <div className="relative mt-12">
+            {/* Sits above the CTA only — cleared from the slogan */}
             <div
               aria-hidden
-              className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 flex select-none flex-col items-start"
+              className="pointer-events-none absolute -top-10 left-0 z-10 select-none"
             >
               <p
-                className="-mb-0.5 rotate-[-6deg] text-[1.5rem] leading-none tracking-wide text-zinc-400/80"
+                className="rotate-[-7deg] whitespace-nowrap text-[1.35rem] leading-none tracking-wide text-zinc-400/80"
                 style={{ fontFamily: "var(--font-hand), cursive" }}
               >
                 come hang
               </p>
               <svg
-                width="78"
-                height="36"
-                viewBox="0 0 78 36"
+                width="56"
+                height="34"
+                viewBox="0 0 56 34"
                 fill="none"
-                className="ml-3 text-zinc-400/70"
+                className="ml-7 mt-0.5 text-zinc-400/70"
               >
                 <path
-                  d="M4 4c14 2 28 6 42 16 8 5 16 10 24 12"
+                  d="M6 2c8 4 14 11 16 22"
                   stroke="currentColor"
-                  strokeWidth="1.7"
+                  strokeWidth="1.65"
                   strokeLinecap="round"
                 />
                 <path
-                  d="M58 22c6 4 10 7 12 10"
+                  d="M16 18c3 3 7 6 12 7"
                   stroke="currentColor"
-                  strokeWidth="1.7"
+                  strokeWidth="1.65"
                   strokeLinecap="round"
                 />
                 <path
-                  d="M62 18c6 5 10 10 10 14"
+                  d="M22 16c2 5 3 9 2 12"
                   stroke="currentColor"
-                  strokeWidth="1.7"
+                  strokeWidth="1.65"
                   strokeLinecap="round"
                 />
               </svg>
