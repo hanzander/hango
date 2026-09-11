@@ -30,7 +30,7 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="hango-landing relative min-h-dvh overflow-hidden bg-bg">
+    <div className="hango-landing relative min-h-dvh bg-bg">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -71,36 +71,34 @@ export default async function HomePage() {
           </h1>
 
           <div className="relative mt-12">
-            {/* Sits above the CTA only — cleared from the slogan */}
+            {/* Left of Get started — absolute so the button never shifts */}
             <div
               aria-hidden
-              className="pointer-events-none absolute -top-10 left-0 z-10 select-none"
+              className="pointer-events-none absolute left-0 top-1/2 z-10 hidden -translate-x-[calc(100%+0.35rem)] -translate-y-[58%] select-none sm:block"
             >
               <p
-                className="rotate-[-7deg] whitespace-nowrap text-[1.35rem] leading-none tracking-wide text-zinc-400/80"
+                className="rotate-[-8deg] whitespace-nowrap text-[1.4rem] leading-none tracking-wide text-zinc-400/80"
                 style={{ fontFamily: "var(--font-hand), cursive" }}
               >
                 come hang
               </p>
               <svg
-                width="52"
-                height="42"
-                viewBox="0 0 52 42"
+                width="72"
+                height="44"
+                viewBox="0 0 72 44"
                 fill="none"
-                className="ml-8 mt-0.5 text-zinc-400/75"
+                className="ml-4 mt-0.5 text-zinc-400/75"
               >
-                {/* single curved shaft */}
                 <path
-                  d="M6 4c8 5 16 14 20 30"
+                  d="M5 7c17 4 34 13 50 29"
                   stroke="currentColor"
-                  strokeWidth="1.7"
+                  strokeWidth="1.75"
                   strokeLinecap="round"
                 />
-                {/* clear open arrowhead pointing down-right */}
                 <path
-                  d="M14 28l12 8 10-14"
+                  d="M40 24l16 14 4-16"
                   stroke="currentColor"
-                  strokeWidth="1.7"
+                  strokeWidth="1.75"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />

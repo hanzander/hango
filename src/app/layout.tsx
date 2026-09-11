@@ -26,15 +26,15 @@ export const metadata: Metadata = {
   description: "A calm place to hangout with your people.",
   icons: {
     icon: [
-      { url: "/brand/icon.png", type: "image/png" },
       { url: "/brand/mark.svg", type: "image/svg+xml" },
+      { url: "/brand/icon.png", type: "image/png" },
     ],
-    apple: [{ url: "/brand/apple-touch-icon.png" }],
+    apple: [{ url: "/brand/mark.svg" }],
   },
   openGraph: {
     title: "Hango",
     description: "A calm place to hangout with your people.",
-    images: [{ url: "/brand/icon.png" }],
+    images: [{ url: "/brand/mark.svg" }],
   },
 };
 

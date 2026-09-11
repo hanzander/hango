@@ -1,28 +1,22 @@
 ﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Hango">
   <defs>
-    <linearGradient id="tile" x1="12" y1="0" x2="52" y2="64" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2A221C"/>
-      <stop offset="1" stop-color="#15110E"/>
+    <linearGradient id="tile" x1="18" y1="4" x2="48" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3A2E26"/>
+      <stop offset="1" stop-color="#1A1512"/>
     </linearGradient>
-    <linearGradient id="bubble" x1="22" y1="14" x2="40" y2="46" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F6EFE4"/>
-      <stop offset="1" stop-color="#E2D4C2"/>
+    <linearGradient id="bubble" x1="22" y1="16" x2="42" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F0E6"/>
+      <stop offset="1" stop-color="#E4D5C3"/>
     </linearGradient>
-    <radialGradient id="ember" cx="32" cy="46" r="14" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#E8B57A" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#E8B57A" stop-opacity="0"/>
+    <radialGradient id="glow" cx="32" cy="48" r="16" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E0A86A" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#E0A86A" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <rect width="64" height="64" rx="16" fill="url(#tile)"/>
-  <circle cx="32" cy="44" r="14" fill="url(#ember)"/>
-  <!-- soft speech bubble -->
-  <path
-    d="M18 24.5c0-5.8 4.7-10.5 10.5-10.5h7c5.8 0 10.5 4.7 10.5 10.5v7.2c0 5.8-4.7 10.5-10.5 10.5H31.2l-6.8 5.1c-.8.6-1.9 0-1.9-1v-4.1c-2.6-1-4.5-3.5-4.5-6.5V24.5Z"
-    fill="url(#bubble)"
-  />
-  <!-- tiny second whisper bubble -->
-  <ellipse cx="44.5" cy="20.5" rx="5.2" ry="4.4" fill="#F3E8D8" opacity="0.92"/>
-  <!-- warm lamp -->
-  <circle cx="32" cy="48.5" r="3.2" fill="#E0A86A"/>
-  <circle cx="32" cy="47.6" r="1.35" fill="#F6D7A8" opacity="0.85"/>
+  <circle cx="32" cy="46" r="15" fill="url(#glow)"/>
+  <path d="M15 26c0-6.6 5.4-12 12-12h10c6.6 0 12 5.4 12 12v8c0 6.6-5.4 12-12 12H30.5l-7.8 5.8c-.9.7-2.2.05-2.2-1.1v-4.6C17.4 43.2 15 39.9 15 36v-10Z" fill="url(#bubble)"/>
+  <circle cx="44" cy="20" r="5.5" fill="#F3E8D8"/>
+  <circle cx="32" cy="49" r="4" fill="#E0A86A"/>
+  <circle cx="32" cy="48" r="1.6" fill="#F6D7A8" opacity="0.9"/>
 </svg>
